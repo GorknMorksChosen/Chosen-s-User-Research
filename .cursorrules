@@ -1,0 +1,10 @@
+# 问卷数表 / UserResearch 项目 — 开发规范总览
+
+- **技术栈**: Python 3.10+, Pandas, Pingouin（统计，新代码优先）/ scipy·statsmodels（现有可保留）, OpenAI API（文本分析）, Streamlit（前端）。
+- **代码风格**: 函数式为主；模块化 — 数据处理与统计在 `survey_tools/core/`，UI 在 `survey_tools/web/`，不在 Streamlit 里写核心计算。
+- **统计标准**: 所有统计检验前自动检查正态性与方差齐性；不满足时改用非参数/稳健方法并注明。
+- **需求与输入输出**: 项目定位、功能清单参考、输入示例与 .xlsx 导出约定见 README「项目定位与需求约定」及 `.cursor/rules/project-standards.mdc` 中「输入/输出与依赖约定」。
+- **数据处理基本原则**: 先探索后清理再分析、分析前心中有数、数据类型决定分析方法、适用条件不满足时转换或改方法；详见 `.cursor/rules/project-standards.mdc`（来源：wjxspss）。
+- **文档与迭代可见性**: README 与 DEV_LOG 为前情提要、后续计划及完成情况入口；重要 .md 须在 README 或 DEV_LOG 中有说明与映射。详见 `.cursor/rules/project-standards.mdc`。
+
+详细约定见 `.cursor/rules/project-standards.mdc`。
