@@ -20,7 +20,7 @@ plt.rcParams['font.sans-serif'] = ['SimHei']  # 使用黑体
 plt.rcParams['axes.unicode_minus'] = False  # 解决负号显示问题
 
 def render_ipa_module(df):
-    st.header("📊 基础洞察：IPA 四象限分析")
+    st.header("基础洞察：IPA 四象限分析")
     st.markdown("""
     通过计算细项得分的**均值**（表现）与整体满意度的**相关系数**（重要性），识别“拖累”项。
     """)
@@ -114,7 +114,7 @@ def render_ipa_module(df):
             st.error(f"分析过程中发生错误: {str(e)}。请检查选中的列是否包含有效的数值数据。")
 
 def render_regression_module(df):
-    st.header("🏆 核心诊断：满意度多元回归")
+    st.header("核心诊断：满意度多元回归")
     st.markdown("> **集成统计学严谨性与业务决策逻辑：** 自动处理脏数据、检测信度、计算驱动力并导出报告。")
     
     cols = df.columns.tolist()
@@ -169,7 +169,7 @@ def render_regression_module(df):
         analyzer = GameExperienceAnalyzer(df) # 复用 Analyzer 的部分功能
         
         st.divider()
-        st.subheader("🛡️ 数据质量监控")
+        st.subheader("数据质量监控")
         q1, q2, q3 = st.columns(3)
         
         # 1. 信度检查
@@ -256,7 +256,7 @@ def render_regression_module(df):
 
         # IPA Plot
         st.divider()
-        st.subheader("🎯 驱动力决策矩阵 (IPA)")
+        st.subheader("驱动力决策矩阵 (IPA)")
         m_score = results_df["平均得分"].mean()
         m_beta = results_df["影响力(Beta系数)"].mean()
         fig = px.scatter(
@@ -274,7 +274,7 @@ def render_regression_module(df):
         st.divider()
         col_res, col_export = st.columns([2, 1])
         with col_res:
-            st.subheader("📋 核心诊断结论")
+            st.subheader("核心诊断结论")
             draggers = results_df[(results_df["是否纳入核心模型"] == "是") & (results_df["影响力(Beta系数)"] > m_beta) & (results_df["平均得分"] < m_score)]
             moats = results_df[(results_df["是否纳入核心模型"] == "是") & (results_df["影响力(Beta系数)"] > m_beta) & (results_df["平均得分"] >= m_score)]
             
@@ -294,7 +294,7 @@ def render_regression_module(df):
             st.text_area("自动分析摘要", value=text_summary, height=100)
 
         with col_export:
-            st.subheader("💾 导出报告")
+            st.subheader("导出报告")
             sheet_诊断 = st.checkbox("统计诊断汇总", value=True, key="exp_diag")
             sheet_健康度 = st.checkbox("模型健康度", value=True, key="exp_health")
             sheet_摘要 = st.checkbox("自动摘要", value=True, key="exp_summary")
@@ -318,17 +318,17 @@ def render_regression_module(df):
         st.dataframe(results_df.sort_values("影响力(Beta系数)", ascending=False), use_container_width=True)
 
 def render_game_experience_module(df):
-    st.header("🔬 专家模式：全链路体验建模")
+    st.header("高级模式：全链路体验建模")
     st.markdown("通过 **相关性 -> 因子聚类 -> 玩家分群 -> 因果回归 -> 路径分析** 的全链路逻辑，帮您揪出体验中的“幕后黑手”。")
     
     analyzer = GameExperienceAnalyzer(df)
     all_cols = df.columns.tolist()
     
-    tab0, tab1, tab2, tab3, tab4, tab5 = st.tabs(["📋 数据看板与体检", "📊 相关性分析", "🔍 因子与聚类", "📈 回归与因果", "💡 Kano & SHAP", "🕸️ 路径分析(SEM)"])
+    tab0, tab1, tab2, tab3, tab4, tab5 = st.tabs(["数据看板与体检", "相关性分析", "因子与聚类", "回归与因果", "Kano 与 SHAP", "路径分析 (SEM)"])
 
     # --- TAB 0: 数据看板与体检 ---
     with tab0:
-        st.subheader("🛠️ 分析参数配置")
+        st.subheader("分析参数配置")
         c1, c2 = st.columns(2)
         with c1:
             selected_features = st.multiselect("1. 选择要分析的满意度细项 (数值型)", all_cols, key="game_features")
@@ -337,7 +337,7 @@ def render_game_experience_module(df):
             id_col = st.selectbox("3. 可选：选择样本标识字段", ["（使用问卷行号代替）"] + all_cols, key="game_id_col")
 
         st.divider()
-        st.subheader("🧼 数据清洗与质量体检")
+        st.subheader("数据清洗与质量体检")
         
         c3, c4 = st.columns(2)
         with c3:
@@ -345,7 +345,7 @@ def render_game_experience_module(df):
         with c4:
             min_duration = st.number_input("最小作答时长 (秒)", value=30, key="game_min_duration")
 
-        if st.button("🚀 执行全量数据体检", use_container_width=True):
+        if st.button("执行全量数据体检", use_container_width=True):
             if not selected_features:
                 st.error("请先选择分析细项。")
             else:
@@ -373,7 +373,7 @@ def render_game_experience_module(df):
 
     # --- TAB 1: 相关性分析 ---
     with tab1:
-        st.subheader("📊 模块关联矩阵")
+        st.subheader("模块关联矩阵")
         if st.button("计算相关性矩阵"):
             corr_matrix = analysis_df.corr(method='spearman')
             fig_corr = px.imshow(corr_matrix, text_auto=".2f", aspect="auto", color_continuous_scale='RdBu_r', range_color=[-1, 1])
@@ -381,7 +381,7 @@ def render_game_experience_module(df):
 
     # --- TAB 2: 因子与聚类 ---
     with tab2:
-        st.subheader("🔍 因子分析")
+        st.subheader("因子分析")
         if st.button("计算碎石图"):
             fa_temp = FactorAnalyzer(rotation=None, n_factors=len(selected_features))
             fa_temp.fit(analysis_df)
@@ -396,7 +396,7 @@ def render_game_experience_module(df):
             st.plotly_chart(px.imshow(loadings, text_auto=".2f", color_continuous_scale='RdBu_r'), use_container_width=True)
 
         st.divider()
-        st.subheader("👥 玩家聚类")
+        st.subheader("玩家聚类")
         n_clusters = st.slider("选择聚类数量", 2, 6, 3, key="game_n_clusters")
         if st.button("执行聚类分析"):
             df_clustered, centers, scaler, sil_avg = analyzer.cluster_analysis(selected_features, n_clusters)
@@ -409,7 +409,7 @@ def render_game_experience_module(df):
 
     # --- TAB 3: 回归与因果 ---
     with tab3:
-        st.subheader("📈 多元回归")
+        st.subheader("多元回归")
         cluster_option = "整体数据"
         if 'cluster_results' in st.session_state:
              available_clusters = sorted(st.session_state.cluster_results['df_clustered']['玩家分群'].unique().tolist())
@@ -473,7 +473,7 @@ def render_game_experience_module(df):
 
     # --- TAB 4: Kano & SHAP ---
     with tab4:
-        st.subheader("💡 Kano & SHAP")
+        st.subheader("Kano 与 SHAP")
         if st.button("执行 Kano 分析"):
             kano_res = analyzer.kano_analysis(selected_features, target_col)
             st.dataframe(kano_res, use_container_width=True)
@@ -492,7 +492,7 @@ def render_game_experience_module(df):
 
     # --- TAB 5: 路径分析 ---
     with tab5:
-        st.subheader("🕸️ 路径分析 (SEM)")
+        st.subheader("路径分析 (SEM)")
         if st.button("生成推荐模型结构"):
             spec = analyzer.generate_recommended_model_spec(selected_features, target_col)
             st.text_area("模型结构 (semopy语法)", value=spec, height=150, key="game_sem_spec")
@@ -506,14 +506,14 @@ def render_game_experience_module(df):
                 st.error(f"路径分析失败: {e}")
 
 def main():
-    st.set_page_config(page_title="满意度与体验建模超级应用", layout="wide")
+    st.set_page_config(page_title="满意度与体验建模工具", layout="wide")
     
     # Global Sidebar
     st.sidebar.title("导航")
     app_mode = st.sidebar.radio("选择功能模块", [
-        "📊 基础洞察：IPA 四象限分析",
-        "🏆 核心诊断：满意度多元回归",
-        "🔬 专家模式：全链路体验建模"
+        "基础洞察：IPA 四象限分析",
+        "核心诊断：满意度多元回归",
+        "高级模式：全链路体验建模"
     ])
     
     # Global File Uploader
@@ -555,11 +555,11 @@ def main():
         df = st.session_state.df
         st.divider()
         
-        if app_mode == "📊 基础洞察：IPA 四象限分析":
+        if app_mode == "基础洞察：IPA 四象限分析":
             render_ipa_module(df)
-        elif app_mode == "🏆 核心诊断：满意度多元回归":
+        elif app_mode == "核心诊断：满意度多元回归":
             render_regression_module(df)
-        elif app_mode == "🔬 专家模式：全链路体验建模":
+        elif app_mode == "高级模式：全链路体验建模":
             render_game_experience_module(df)
     else:
         st.info("👈 请在上方上传数据文件以开始分析。")

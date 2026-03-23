@@ -247,3 +247,18 @@ def __init__(self, data):
 2. **条件性断言是无效测试**：`if p < 0.05: assert pairwise_structure` 这类写法，在条件不满足时等于零验证。正确做法：断言无条件执行，或使用专门构造了显著性差异的 mock 数据保证条件触发。
 3. **子进程须设置超时**：`subprocess.run(..., timeout=180)`，防止脚本死循环无限挂起质量矩阵。
 4. **比对失败时 `sys.exit(1)`**：回归对比脚本（如 `test_migration.py`）在 `all_ok=False` 时必须以非零退出码退出，确保失败可被质量矩阵捕获。
+
+
+## 文档与命名风格约束 (Tone & Terminology)
+
+- **基本原则**：拒绝任何营销化、情绪化、武侠或游戏化的黑话（如“神器”、“打击”、“坐牢”）。使用平实、客观、精确的数据科学与软件工程术语。
+- **术语映射字典**（AI 必须严格遵守）：
+  - 🚫 “五剑客/四大剑客” -> ✅ “核心分析模块 (Core Analysis Modules)” 或 “核心工具集 (Core Toolkit)”
+  - 🚫 “超级应用” -> ✅ “综合评分诊断模块 (Comprehensive Diagnostic Module)” 或 “满意度与体验建模”
+  - 🚫 “旗舰版/标准版 (Flagship/Standard)” -> ✅ “深度归因 (Advanced)” / “基础分析 (Routine/Basic)”
+  - 🚫 “降维打击” -> ✅ “特征降维 (Dimensionality Reduction)”
+  - 🚫 “寻K神器” -> ✅ “K值寻优 (K-Value Optimization)” 或 “最佳簇数评估”
+  - 🚫 “全景战情室” -> ✅ “数据看板 (Dashboard)” 或 “分群画像总览 (Persona Overview)”
+  - 🚫 “一站式/秒杀” -> ✅ “自动化 (Automated) / 集成化 (Integrated)”
+- **Emoji 使用限制**：在 README、UI 界面和控制台输出中，克制使用 Emoji。仅保留必要的结构指示符（如 ✅ 代表成功，⚠️ 代表警告，❌ 代表错误），禁止使用 🚀, ⚔️, 🛡️, 🧠 等修饰性图标。
+- **函数与类命名**：必须反映其实际工程职责或统计算法，不得包含修饰性形容词（例如用 `SatisfactionAnalyzer` 代替 `SuperAppDriver`）。

@@ -9,7 +9,7 @@
 
 | 序号 | 事项 | 说明 | 产出/完成标准 |
 |------|------|------|----------------|
-| 1 | **执行映射验收表** | 按 `UserResearch/五剑客_wjxspss目录_映射验收表.md` 共 16 条，逐条按「验收方式」跑通五剑客，使用 `input_example` 或等价数据 | 每条状态更新为「通过」或「不通过」；不通过项记录原因（界面/导出/报错） |
+| 1 | **执行映射验收表** | 按 `UserResearch/docs/core_modules_wjxspss_acceptance_matrix.md` 共 16 条，逐条按「验收方式」跑通核心模块，使用 `input_example` 或等价数据 | 每条状态更新为「通过」或「不通过」；不通过项记录原因（界面/导出/报错） |
 | 2 | **验收问题清单** | 将不通过项整理为问题清单（条目 + 对应剑客 + 现象 + 可能原因），便于排期修复 | `UserResearch/验收问题清单_yyyymmdd.md` 或合并进 DEV_LOG |
 | 3 | **需求与规则符合度检查** | 对照 README「项目定位与需求约定」与 project-standards.mdc：① 各工具是否支持 .csv/.xlsx，是否已接 .sav（pyreadstat）② 导出是否为「一工作簿多 sheet」、是否支持「用户勾选再打包」 | 结论：符合 / 部分符合（列差异）/ 不符合（列缺口），并标出需改动的工具或文档 |
 
@@ -21,7 +21,7 @@
 |------|------|------|----------------|
 | 4 | **修复验收不通过项** | 根据问题清单，按「统计正确性 > 兼容性 > 稳健性」优先修复，修完再回归验收 | 不通过条数归零或剩余项明确列入 backlog |
 | 5 | **验收用例沉淀为回归用例** | 将映射验收表中「通过」的验收方式，转化为可重复执行的用例（脚本或步骤文档），纳入现有质量矩阵（如 `run_quality_matrix.py` / P2 基线） | 至少 Quant / Standard / 聚类 / Text 各 1 条可回归用例，游研视情况 |
-| 6 | **功能缺口与 Backlog** | 从 `功能可执行清单_参考wjxspss.md` 与 `五剑客_wjxspss目录_对应表.md`「未实现」中，选出与需求强相关且可排期的项（如：单样本/配对 t、偏相关、导出勾选多 sheet、.sav 读取等） | Backlog 列表（优先级 + 对应清单条目 + 目标剑客/模块） |
+| 6 | **功能缺口与 Backlog** | 从 `功能可执行清单_参考wjxspss.md` 与 `core_modules_wjxspss_mapping.md`「未实现」中，选出与需求强相关且可排期的项（如：单样本/配对 t、偏相关、导出勾选多 sheet、.sav 读取等） | Backlog 列表（优先级 + 对应清单条目 + 目标模块） |
 
 **Backlog P1 已含（排期见 Backlog）**：多选事后检验与显著性矩阵、题型标记按题号视图、矩阵题命名一致化、用户标签列（type.）识别与手动列归属。
 
@@ -65,8 +65,8 @@
 ## 六、参考文档
 
 - 需求与约定：`README.md`「项目定位与需求约定」、`.cursor/rules/project-standards.mdc`
-- 验收与映射：`UserResearch/五剑客_wjxspss目录_映射验收表.md`、`UserResearch/五剑客_wjxspss目录_对应表.md`
-- 功能与任务：`UserResearch/功能可执行清单_参考wjxspss.md`、`UserResearch/任务列表_wjxspss规则与五剑客映射验收.md`
+- 验收与映射：`UserResearch/docs/core_modules_wjxspss_acceptance_matrix.md`、`UserResearch/docs/core_modules_wjxspss_mapping.md`
+- 功能与任务：`UserResearch/功能可执行清单_参考wjxspss.md`、`UserResearch/docs/task_list_wjxspss_mapping_acceptance.md`
 - 迭代与风险：`README.md`「版本优化与迭代计划」「当前重点风险」
 
 ---

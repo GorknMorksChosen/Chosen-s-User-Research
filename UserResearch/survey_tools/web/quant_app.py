@@ -379,7 +379,7 @@ def main():
     init_session_state()
 
     st.set_page_config(page_title="问卷定量交叉分析工具", layout="wide")
-    st.title("📊 问卷定量交叉分析工具")
+    st.title("问卷定量交叉分析")
     st.markdown("基于 Pandas 的定量交叉分析与分组对比，不依赖 LLM。")
 
     with st.expander("调试与日志（定位异常用）", expanded=False):
@@ -857,7 +857,7 @@ def main():
             st.markdown("---")
             run_col1, run_col2 = st.columns([3, 1])
             with run_col2:
-                 run_btn = st.button("🚀 开始全自动交叉分析", type="primary", use_container_width=True)
+                 run_btn = st.button("开始交叉分析", type="primary", use_container_width=True)
             with run_col1:
                  st.caption("点击按钮后，系统将自动进行：交叉制表、卡方检验/ANOVA检验、效应量计算及P值标记。")
         

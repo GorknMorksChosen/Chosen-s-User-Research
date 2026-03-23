@@ -17,8 +17,8 @@
 
 | 工具简称 | 入口脚本（相对 UserResearch） | 启动方式示例 |
 |----------|-------------------------------|------------------------|
-| Quant | `问卷定量分析工具 v1.py` | `streamlit run 问卷定量分析工具\ v1.py --server.port 8501` |
-| Standard | `超级应用_满意度与体验建模.py` | `streamlit run 超级应用_满意度与体验建模.py --server.port 8502` |
+| Quant | `quant_analysis_engine.py` | `streamlit run quant_analysis_engine.py --server.port 8501` |
+| Standard | `satisfaction_engine.py` | `streamlit run satisfaction_engine.py --server.port 8502` |
 | 游研专家 | `game_analyst.py` | `streamlit run game_analyst.py --server.port 8503` |
 | 聚类 | `聚类.py` | `streamlit run 聚类.py --server.port 8504` |
 | Text | `问卷文本分析工具 v1.py` | `streamlit run 问卷文本分析工具\ v1.py --server.port 8505` |
@@ -76,7 +76,7 @@
 
 | 文档 | 路径 | 用途 |
 |------|------|------|
-| 映射验收表 | `UserResearch/五剑客_wjxspss目录_映射验收表.md` | 16 条完整验收方式与验收状态；**智能体需在此更新每条状态及文末汇总**。 |
+| 映射验收表 | `UserResearch/docs/core_modules_wjxspss_acceptance_matrix.md` | 16 条完整验收方式与验收状态；**智能体需在此更新每条状态及文末汇总**。 |
 | 验收问题清单 | `UserResearch/验收问题清单_20260317.md` | **不通过项在此记录**：新增行填清单条目、五剑客、现象、可能原因。 |
 | 需求与规则符合度检查 | `UserResearch/需求与规则符合度检查_20260317.md` | 仅阅读参考，无需智能体修改（已做完）。 |
 | 下一步 to-do | `UserResearch/下一步_to-do_项目主管.md` | 项目后续 to-do，人工验收完成后可进入「二」修复与回归用例沉淀。 |
@@ -85,7 +85,7 @@
 
 ## 七、前情提要（为何有这 16 条）
 
-- 项目以《SPSSAU 问卷/量表数据分析方法与应用》为参考整理了「功能可执行清单」，并将清单六大类与五剑客做了对应（已实现/部分实现/未实现），见 `UserResearch/五剑客_wjxspss目录_对应表.md`。
+- 项目以《SPSSAU 问卷/量表数据分析方法与应用》为参考整理了「功能可执行清单」，并将清单六大类与核心模块做了对应（已实现/部分实现/未实现），见 `UserResearch/docs/core_modules_wjxspss_mapping.md`。
 - 对「已实现/部分实现」的条目做了逐条映射与验收方式定义，形成《映射验收表》；表内约 18 条为需**在界面人工执行**的验收项。
 - 自动化部分（质量矩阵）已跑过：3/5 通过，2/5 失败（依赖 `example/` 路径）；上述人工验收条不依赖该路径，需在浏览器/Streamlit 中逐条完成。
 
@@ -102,4 +102,4 @@
 
 ---
 
-**文档版本**：2026-03-17，与 `五剑客_wjxspss目录_映射验收表.md`、`验收问题清单_20260317.md` 配套。README 与 DEV_LOG 中已包含本文档的说明与映射。
+**文档版本**：2026-03-17，与 `core_modules_wjxspss_acceptance_matrix.md`、`验收问题清单_20260317.md` 配套。README 与 DEV_LOG 中已包含本文档的说明与映射。

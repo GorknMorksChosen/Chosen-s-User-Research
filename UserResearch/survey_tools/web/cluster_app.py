@@ -81,7 +81,7 @@ def plot_pca_scatter(df_labeled, cluster_col='Cluster'):
         
         fig = px.scatter(
             df_plot, x='PCA1', y='PCA2', color=cluster_col,
-            title="全景战情室 A：PCA 降维散点图",
+            title="综合可视化面板 A：PCA 降维散点图",
             hover_data=feature_cols[:5] # Show first 5 features on hover
         )
         st.plotly_chart(fig, use_container_width=True)
@@ -110,7 +110,7 @@ def plot_radar_chart(cluster_profiles):
             radialaxis=dict(visible=True)
         ),
         showlegend=True,
-        title="全景战情室 B：人群特征雷达图"
+        title="综合可视化面板 B：人群特征雷达图"
     )
     st.plotly_chart(fig, use_container_width=True)
 
@@ -120,7 +120,7 @@ def plot_heatmap(cluster_profiles):
         cluster_profiles.T, 
         aspect="auto",
         color_continuous_scale="RdBu_r",
-        title="全景战情室 C：特征均值差异热力图"
+        title="综合可视化面板 C：特征均值差异热力图"
     )
     st.plotly_chart(fig, use_container_width=True)
 
@@ -161,7 +161,7 @@ def get_ai_naming(cluster_profiles, api_key):
 
 def main():
     st.set_page_config(page_title="智能玩家分群引擎", layout="wide")
-    st.title("🧩 智能玩家分群引擎 (Flagship)")
+    st.title("玩家分群分析工具 (Advanced)")
     st.markdown("---")
 
     # --- 1. Upload & Setup ---
@@ -205,7 +205,7 @@ def main():
         st.session_state["cluster_strategy_profile"] = "balanced"
 
     with st.sidebar:
-        st.header("⚙️ 设置面板")
+        st.header("设置面板")
         numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
         feature_cols = st.multiselect("选择用于聚类的特征列", numeric_cols, default=numeric_cols[:5] if len(numeric_cols) > 5 else numeric_cols)
         
@@ -300,7 +300,7 @@ def main():
         df_for_clustering = df_scaled
 
     # --- 4. Find K ---
-    st.header("1. 寻找最佳 K 值")
+    st.header("1. 选择 K 值")
     if st.button("开始分析最佳 K 值"):
         with st.spinner("正在计算 WCSS 和 轮廓系数..."):
             k_results = find_optimal_k(df_for_clustering)
@@ -335,7 +335,7 @@ def main():
             st.session_state["cluster_eval_df"] = eval_df
             st.session_state["cluster_recommendation"] = recommendation
             st.session_state["cluster_eval_k"] = k_final
-    if st.button("智能推荐K+算法"):
+    if st.button("推荐 K+算法"):
         with st.spinner("正在联合评估 K 与算法..."):
             global_rec = recommend_k_algorithm_combo(
                 df_for_clustering,
@@ -373,7 +373,7 @@ def main():
             rec_reason = recommendation.get("reason", "")
             rec_profile = recommendation.get("profile", st.session_state["cluster_strategy_profile"])
             st.success(f"推荐算法：{rec_algo}（模板: {rec_profile}）。{rec_reason}")
-            if st.button("一键采用推荐算法"):
+            if st.button("采用推荐算法"):
                 st.session_state["cluster_algorithm"] = rec_algo
                 st.rerun()
     global_rec = st.session_state.get("cluster_global_recommendation")
@@ -403,7 +403,7 @@ def main():
                 ),
                 use_container_width=True,
             )
-        if st.button("一键采用推荐K+算法"):
+        if st.button("采用推荐 K+算法"):
             st.session_state["cluster_k"] = rec_k
             st.session_state["cluster_algorithm"] = rec_algo
             st.rerun()
@@ -424,7 +424,7 @@ def main():
                 'names': {i: f"簇 {i}" for i in range(k_final)},
                 'metrics': metrics,
             }
-            st.success("聚类完成！请查看下方全景战情室。")
+            st.success("聚类完成，请查看下方综合可视化面板。")
             st.rerun()
 
     # Check if results exist to display
@@ -441,7 +441,7 @@ def main():
         col_m4.metric("Davies-Bouldin", f"{metrics.get('davies_bouldin', np.nan):.4f}")
         
         # --- 6. Visualization ---
-        st.subheader("全景战情室")
+        st.subheader("综合可视化面板")
         
         # Update profiles with current names for better visualization
         profiles_display = profiles.copy()
@@ -459,7 +459,7 @@ def main():
             plot_heatmap(profiles_display)
 
         # --- 7. Naming & Export ---
-        st.header("3. 智能命名与导出")
+        st.header("3. 分群命名与导出")
         
         col_ai, col_manual = st.columns([1, 2])
         

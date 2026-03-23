@@ -190,12 +190,12 @@
 
 | 模块/入口 | 审阅状态 | 备注 |
 |-----------|----------|------|
-| 问卷定量分析工具 v1.py | 已审阅 | 入口仅调用 quant_app |
+| quant_analysis_engine.py | 已审阅 | 入口仅调用 quant_app |
 | survey_tools/web/quant_app.py | 已审阅 | 见问题 1、5 |
 | survey_tools/core/quant.py | 已审阅 | 见问题 12 |
 | survey_tools/core/question_type.py | 已审阅 | 未发现 bug |
 | survey_tools/core/effect_size.py | 已审阅 | 未发现 bug |
-| 超级应用_满意度与体验建模.py | 已审阅 | 入口仅调用 satisfaction_app |
+| satisfaction_engine.py | 已审阅 | 入口仅调用 satisfaction_app |
 | survey_tools/web/satisfaction_app.py | 已审阅 | 见问题 3、4、8 |
 | survey_tools/core/advanced_modeling.py | 已审阅 | 与 game_analyst 重复实现见问题 10 |
 | game_analyst.py | 已审阅 | 见问题 2、9、10、13 |

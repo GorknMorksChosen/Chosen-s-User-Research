@@ -60,7 +60,7 @@ def main() -> None:
         st.caption("提示：关闭显著性检验后，仅输出描述统计结果，不执行显著性打标与差异标记。")
 
     run_clicked = st.button(
-        "▶️ 开始一键分析",
+        "开始一键分析",
         type="primary",
         use_container_width=True,
         disabled=(uploaded_file is None or load_error is not None),

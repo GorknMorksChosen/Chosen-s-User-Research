@@ -41,7 +41,7 @@ TOOLS: list[dict] = [
     },
     {
         "id": "satisfaction",
-        "name": "满意度与体验建模超级应用 (Standard)",
+        "name": "满意度与体验建模工具 (Standard)",
         "entry": "survey_tools/web/satisfaction_app.py",
         "cli": None,
         "core_fn": "survey_tools.core.advanced_modeling",
@@ -49,7 +49,7 @@ TOOLS: list[dict] = [
         "stage": "web",
         "description": (
             "上传满意度问卷数据，进行 IPA 象限分析、多元回归/驱动力分析、"
-            "玩家分群（聚类）及 AI 自动命名，输出可解释的体验建模报告。"
+            "玩家分群（聚类）及 AI 辅助命名，输出可解释的体验建模报告。"
         ),
         "input_schema": {
             "type": "object",
@@ -73,14 +73,14 @@ TOOLS: list[dict] = [
     },
     {
         "id": "game_analyst",
-        "name": "游研专家：全链路归因分析 (Flagship)",
+        "name": "全链路归因分析工具 (Advanced)",
         "entry": "game_analyst.py",
         "cli": None,
         "core_fn": "game_analyst.GameExperienceAnalyzer",
         "port": 8503,
         "stage": "web",
         "description": (
-            "游戏体验全链路分析旗舰工具：数据质量检查、描述统计、相关分析、"
+            "游戏体验全链路分析工具：数据质量检查、描述统计、相关分析、"
             "回归建模、SEM 结构方程模型，适合深度归因与体验机制研究。"
         ),
         "input_schema": {
@@ -96,15 +96,15 @@ TOOLS: list[dict] = [
     },
     {
         "id": "cluster",
-        "name": "玩家智能分群引擎 (Flagship)",
+        "name": "玩家分群分析工具 (Advanced)",
         "entry": "survey_tools/web/cluster_app.py",
         "cli": None,
         "core_fn": "survey_tools.core.clustering.perform_clustering",
         "port": 8504,
         "stage": "web",
         "description": (
-            "对玩家行为/态度数据进行智能聚类分析：支持因子分析降维、"
-            "K-Means / 层次聚类算法选择、轮廓系数评估、AI 自动命名分群。"
+            "对玩家行为/态度数据进行聚类分析：支持因子分析降维、"
+            "K-Means / 层次聚类算法选择、轮廓系数评估、AI 辅助命名分群。"
         ),
         "input_schema": {
             "type": "object",

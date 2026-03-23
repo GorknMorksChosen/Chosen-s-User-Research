@@ -196,25 +196,25 @@ python scripts/run_playtest_pipeline.py --help
 
 ## 📅 2026-03-17
 
-### 1. 文档与迭代可见性约定 + wjxspss 规则与五剑客映射验收（阶段 A/B/C）
-**涉及文件**: `README.md`, `UserResearch/DEV_LOG.md`, `.cursor/rules/project-standards.mdc`, `UserResearch/功能可执行清单_参考wjxspss.md`, `UserResearch/五剑客_wjxspss目录_对应表.md`, `UserResearch/五剑客_wjxspss目录_映射验收表.md`, `UserResearch/任务列表_wjxspss规则与五剑客映射验收.md`, `UserResearch/下一步_to-do_项目主管.md`
+### 1. 文档与迭代可见性约定 + wjxspss 规则与核心模块映射验收（阶段 A/B/C）
+**涉及文件**: `README.md`, `UserResearch/DEV_LOG.md`, `.cursor/rules/project-standards.mdc`, `UserResearch/功能可执行清单_参考wjxspss.md`, `UserResearch/docs/core_modules_wjxspss_mapping.md`, `UserResearch/docs/core_modules_wjxspss_acceptance_matrix.md`, `UserResearch/docs/task_list_wjxspss_mapping_acceptance.md`, `UserResearch/下一步_to-do_项目主管.md`
 
 - **项目规则补充**：README 与 DEV_LOG 须保持可读性，使任何人（含对话重开后）能通过二者理解**前情提要、后续计划及完成情况**；重要 .md 文档（需求/清单/验收/计划类）须在 README 或 DEV_LOG 中有**说明与映射**。已写入 `.cursor/rules/project-standards.mdc`。
 
 - **README 更新**：新增「文档与迭代可见性（前情提要 · 计划 · 完成情况）」小节，明确 README + DEV_LOG 为入口，并列出 `UserResearch/` 下需求与验收相关文档的映射表（功能可执行清单、对应表、映射验收表、任务列表、下一步 to-do）。
 
-- **阶段 A（wjxspss 规则补充）**：从 wjxspss 正文归纳「数据处理基本原则」四条，写入 `project-standards.mdc`；`.cursorrules` 补充引用。详见 `任务列表_wjxspss规则与五剑客映射验收.md` 阶段 A 执行记录。
+- **阶段 A（wjxspss 规则补充）**：从 wjxspss 正文归纳「数据处理基本原则」四条，写入 `project-standards.mdc`；`.cursorrules` 补充引用。详见 `task_list_wjxspss_mapping_acceptance.md` 阶段 A 执行记录。
 
-- **阶段 B（目录–五剑客对应表）**：以功能可执行清单六大类为口径，逐条标出五剑客中已实现/部分实现/未实现，产出 `五剑客_wjxspss目录_对应表.md`。可验收范围与未实现项已汇总于该文档。
+- **阶段 B（目录-核心模块对应表）**：以功能可执行清单六大类为口径，逐条标出核心模块中已实现/部分实现/未实现，产出 `core_modules_wjxspss_mapping.md`。可验收范围与未实现项已汇总于该文档。
 
-- **阶段 C（映射验收表）**：对已实现/部分实现条目建立逐条映射与验收方式，产出 `五剑客_wjxspss目录_映射验收表.md`（共 16 条可验收项，状态初始为「待验收」）。不修改代码，仅用于人工或回归验收。
+- **阶段 C（映射验收表）**：对已实现/部分实现条目建立逐条映射与验收方式，产出 `core_modules_wjxspss_acceptance_matrix.md`（共 16 条可验收项，状态初始为「待验收」）。不修改代码，仅用于人工或回归验收。
 
 - **下一步 to-do**：产出 `UserResearch/下一步_to-do_项目主管.md`，包含立即执行（执行验收表、验收问题清单、需求与规则符合度检查）、短期（修复不通过项、沉淀回归用例、功能缺口 Backlog）、中期（P2 管线统一化、依赖锁定、导出约定落地）及可选项。执行顺序与参考文档已在其中说明。
 
 - **DEV_LOG 本条目**：记录上述文档与规则变更，并再次申明 README + DEV_LOG 为前情与计划入口。
 
 ### 2. 执行「一」：16 条验收 + 问题清单 + 需求/规则符合度检查
-**涉及文件**: `UserResearch/验收问题清单_20260317.md`（新增）, `UserResearch/需求与规则符合度检查_20260317.md`（新增）, `UserResearch/五剑客_wjxspss目录_映射验收表.md`, `README.md`
+**涉及文件**: `UserResearch/验收问题清单_20260317.md`（新增）, `UserResearch/需求与规则符合度检查_20260317.md`（新增）, `UserResearch/docs/core_modules_wjxspss_acceptance_matrix.md`, `README.md`
 
 - **质量矩阵**：执行 `run_quality_matrix.py`，结果 3/5 通过（verify_dependency_matrix、test_migration、verify_current_v1_logic），2/5 失败（verify_p2_baseline、verify_p24_clustering 因依赖 `UserResearch/example` 路径不存在或编码问题）。失败原因与 16 条映射验收无一一对应，但影响 P2 基线及 P2-4 聚类自动化回归。
 - **16 条映射验收**：需人工在界面逐条执行（运行各 Streamlit 入口、上传 input_example 数据、按检查点查看）。已产出 **`验收问题清单_20260317.md`**，用于记录不通过项及人工验收后的填写说明；映射验收表已补充执行记录与上述两文档引用。
@@ -653,7 +653,7 @@ python scripts/run_playtest_pipeline.py --help
 - **工具集架构整顿 (Launcher Integration)**:
   - **Launcher 升级**: 更新 `web_tools_launcher.py`，将 `game_analyst.py` 正式注册为 **“游研专家：全链路归因分析 (Flagship)”**，排位提升至核心分析引擎第 3 位。
   - **文档同步**: 同步更新 `README.md`，确立了以 `game_analyst.py` 为旗舰工具的工具体系（当前版本已统一为“五剑客”），并将其从“历史备份”列表中移除，纠正了此前的分类错误。
-  - **角色定义**: 明确了 `game_analyst.py` 与 `超级应用_满意度与体验建模.py` 的差异：前者侧重全链路深度归因，后者侧重快速标准化分析。
+  - **角色定义**: 明确了 `game_analyst.py` 与 `satisfaction_engine.py` 的差异：前者侧重全链路深度归因，后者侧重快速标准化分析。
 
 - **游研专家 (Flagship) 深度优化**:
   - **稳健性修复**: 移除了 `FactorAnalyzer` 调用中的高风险 `sklearn` 补丁，改为异常捕获与版本兼容提示，防止环境崩溃。

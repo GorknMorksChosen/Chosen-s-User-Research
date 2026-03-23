@@ -53,11 +53,11 @@ def main() -> None:
     managed_processes: list[subprocess.Popen] = []
     while True:
         print()
-        print("==== 问卷 Web 工具启动菜单 ====")
+        print("==== Web 工具启动菜单 ====")
         for i, t in enumerate(TOOLS, start=1):
             print(f'{i}. {t["name"]} (http://localhost:{t["port"]})')
         print("0. 退出")
-        choice = input("请输入序号（支持多选：如 1,3,5）并回车: ").strip()
+        choice = input("请输入序号（可多选，如 1,3,5）并回车: ").strip()
         if choice == "0":
             break
         ok, launched = run_tools(choice)
