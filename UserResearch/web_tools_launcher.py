@@ -10,19 +10,13 @@ from tool_registry import TOOLS
 def parse_choices(choice_text: str) -> list[str]:
     normalized = choice_text.replace("，", ",").replace(" ", ",")
     parts = [p.strip() for p in normalized.split(",") if p.strip()]
-    seen: set[str] = set()
-    unique_parts: list[str] = []
-    for p in parts:
-        if p not in seen:
-            unique_parts.append(p)
-            seen.add(p)
-    return unique_parts
+    return list(dict.fromkeys(parts))
 
 
-def run_tools(choice_text: str) -> bool:
+def run_tools(choice_text: str) -> tuple[bool, list[subprocess.Popen]]:
     choices = parse_choices(choice_text)
     if not choices:
-        return False
+        return False, []
     base_dir = os.path.dirname(os.path.abspath(__file__))
 
     # 构建序号 → 工具的映射（1-based）
@@ -32,9 +26,10 @@ def run_tools(choice_text: str) -> bool:
     for choice in choices:
         tool = idx_to_tool.get(choice)
         if not tool:
-            return False
+            return False, []
         selected.append(tool)
 
+    launched: list[subprocess.Popen] = []
     for tool in selected:
         script_path = os.path.join(base_dir, tool["entry"])
         if not os.path.exists(script_path):
@@ -49,12 +44,13 @@ def run_tools(choice_text: str) -> bool:
             "--server.port",
             str(tool["port"]),
         ]
-        subprocess.Popen(cmd, cwd=base_dir)
+        launched.append(subprocess.Popen(cmd, cwd=base_dir))
         print(f'已启动: {tool["name"]} -> http://localhost:{tool["port"]}')
-    return True
+    return True, launched
 
 
 def main() -> None:
+    managed_processes: list[subprocess.Popen] = []
     while True:
         print()
         print("==== 问卷 Web 工具启动菜单 ====")
@@ -64,8 +60,17 @@ def main() -> None:
         choice = input("请输入序号（支持多选：如 1,3,5）并回车: ").strip()
         if choice == "0":
             break
-        if not run_tools(choice):
+        ok, launched = run_tools(choice)
+        if not ok:
             print("无效选择，请重试。")
+            continue
+        managed_processes.extend(launched)
+
+    # 托管模式：退出启动器时，优雅终止本次启动的 Streamlit 子进程，避免端口占用累积。
+    for p in managed_processes:
+        if p.poll() is None:
+            p.terminate()
+    print(f"已退出启动器，并终止 {sum(1 for p in managed_processes if p.poll() is not None)} 个子进程。")
 
 
 if __name__ == "__main__":
