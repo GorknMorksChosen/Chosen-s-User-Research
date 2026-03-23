@@ -43,6 +43,9 @@ env/
 UserResearch/input_example/*.csv
 UserResearch/input_example/*.xlsx
 UserResearch/input_example/*.sav
+UserResearch/data/raw/**
+UserResearch/data/processed/**
+UserResearch/*.zip
 *.sav
 
 # 审阅/导出产出（体积大、可本地再生）
