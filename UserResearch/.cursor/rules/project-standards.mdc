@@ -1,0 +1,252 @@
+---
+description: 问卷/用户研究项目级开发规范（技术栈、代码风格、统计标准）
+alwaysApply: true
+---
+
+# UserResearch 项目开发规范
+
+> 本文件是 `问卷数表/.cursor/rules/project-standards.mdc` 的镜像副本，放在 `UserResearch/` 内确保直接以该目录为工作区时规范同样生效。
+> **两份文件须保持同步**，修改任意一份时请同步另一份。
+
+## 目标用户与场景声明
+
+- **服务对象**：游戏行业用户研究员（UR），主要分析场景为封闭式问卷数据（Likert 量表、多选矩阵、排序题、文本数据等），后续可能会有用户留存数据、付费数据等。
+- **AI 行为约定**：在生成代码、推荐方法、命名变量时，以"用户研究/游戏行业"为领域背景做合理假设。例如：量表默认为 1–5 分，或 1–10 分 Likert，样本量通常在 100–200000 之间，数据以 `.sav` / `.xlsx` 为主要来源。
+
+## 产品阶段声明
+
+| Stage | 含义 | 入口文件命名 |
+|---|---|---|
+| `script` | 单次运行脚本，无 UI | `xxx_script.py` |
+| `desktop` | 本地 Tkinter/命令行工具 | `xxx_desktop.py` |
+| `web` | Streamlit 应用 | `survey_tools/web/xxx_app.py` |
+| `api` | FastAPI / 可部署服务（未来） | `survey_tools/api/xxx_router.py` |
+
+当前阶段：**`web`**（Streamlit 多工具套件）。新增功能默认以 `web` 阶段实现；若需支持 AI agent 调用，同步提供 `cli` 入口（见「CLI 入口规范」）。
+
+## 技术栈
+
+- **Python**: 3.10+（版本锁定见根目录 `.python-version`）
+- **数据处理**: Pandas
+- **统计**: 优先使用 **Pingouin** 做假设检验（内置正态性、方差齐性等前置检查）；现有代码仍使用 scipy / statsmodels 的，可在重构或新增时逐步迁移到 Pingouin。
+- **文本分析**: OpenAI API（或兼容接口）
+- **前端展示**: Streamlit（仅负责 UI 与交互，不承载核心统计/数据处理逻辑）
+- **CLI**: `click` 库（AI agent 调用入口，位于 `survey_tools/cli/`）
+
+## 配置外部化约定
+
+- **所有 API Key、服务地址、可配置路径必须通过环境变量传入**，不得硬编码在源码中。
+- 统一从 `survey_tools/config.py` 读取配置；各模块 `import` 该模块，不得直接散落调用 `os.getenv`。
+- 根目录维护 `.env.example` 作为模板（不提交真实 `.env`）；`.env` 已加入 `.gitignore`。
+- 本地开发：复制 `.env.example` 为 `.env` 并填写真实值；CI/部署：通过平台环境变量注入。
+
+## 环境管理规范
+
+- Python 版本锁定于根目录 `.python-version`（当前：`3.10`）。
+- README 的「环境准备」一节须包含 `venv` 创建、依赖安装、`.env` 配置三个步骤。
+- `requirements.txt` 为主要依赖文件；`requirements.lock.txt` 为固定版本快照（可选）。
+
+## 代码风格与结构
+
+### 函数式 / OOP 适用边界
+
+- **无状态计算**（给定相同输入始终返回相同输出）→ **使用纯函数**，放在 `survey_tools/core/` 层。
+- **有状态分析器**（需在多个方法调用间保持上下文，如 `GameExperienceAnalyzer`）→ **使用类**，同样放在 `survey_tools/core/` 层。
+- 不得为了"看起来像 OOP"而把无状态计算包装成类；也不得用全局变量或 `st.session_state` 代替类内部状态。
+
+### Docstring 规范
+
+`survey_tools/core/` 中所有公开函数（非私有 `_` 前缀）必须包含 docstring，格式如下：
+
+```python
+def run_quant_cross_engine(df, *, core_segment_col, question_specs):
+    """按 v1.3 方法论对 df 做交叉分析，返回各题结果列表。
+
+    Args:
+        df: 原始问卷 DataFrame，行为受访者，列为题目。
+        core_segment_col: 用于分组的核心变量列名（字符串）。
+        question_specs: QuestionSpec 列表，描述每道题的题型与列名。
+
+    Returns:
+        List[dict]，每项含 "题目"、"题型"、"数据"（DataFrame）、"stats"（可选）。
+    """
+```
+
+- **首行**：中文一句话，说明函数功能与使用场景。
+- **Args / Returns**：使用 Google Style 英文，标注类型与含义。
+- 可选 **Raises**：说明可能抛出的异常及触发条件。
+
+### CLI 入口规范
+
+每个核心分析能力应在 `survey_tools/cli/` 下提供对应的 `click` CLI 入口文件：
+
+```python
+# survey_tools/cli/quant_cli.py
+import click
+from survey_tools.core.quant import run_quant_cross_engine
+
+@click.command()
+@click.option("--input", required=True, help="输入文件路径（.csv/.xlsx/.sav）")
+@click.option("--segment-col", required=True, help="核心分组列名")
+@click.option("--output", default="output.xlsx", help="导出路径")
+def quant(input, segment_col, output):
+    """问卷定量交叉分析命令行入口。"""
+    ...
+```
+
+CLI 函数**只做参数解析 + 调用 core 层函数 + 输出结果**，不包含任何业务逻辑，便于 AI agent 通过 subprocess 调用。
+
+### 工具注册表约定
+
+`UserResearch/tool_registry.py` 是所有工具的统一注册中心，结构如下：
+
+```python
+TOOLS: list[dict] = [
+    {
+        "id": "quant",              # 唯一标识，用于 CLI 调度和 agent 引用
+        "name": "问卷定量交叉分析 (Quant Engine 2.0)",
+        "entry": "survey_tools/web/quant_app.py",   # Streamlit 入口（相对于 UserResearch/）
+        "cli": "survey_tools/cli/quant_cli.py",     # CLI 入口（可选）
+        "core_fn": "survey_tools.core.quant.run_quant_cross_engine",
+        "port": 8501,
+        "description": "...",       # 一句话描述，用于 agent tool description
+        "input_schema": { ... },    # JSON Schema，描述核心输入
+    },
+]
+```
+
+`web_tools_launcher.py` 从注册表读取，不得在 launcher 中硬编码工具列表。
+
+### 模块化
+
+- **数据处理与统计逻辑** 放在 `survey_tools/core/`（或等价 core 包）中。
+- **UI 与展示逻辑** 放在 `survey_tools/web/`（或等价 web 包）中；Streamlit 脚本只做调用与展示，不重复实现统计公式。
+- 新功能优先在 core 层实现并单测，再在 web 层接入。
+
+### Core 函数接口约定（AI Agent 兼容）
+
+`survey_tools/core/` 中供 agent 调用的函数必须满足：
+
+1. **纯函数**：相同输入产生相同输出，无副作用（不写文件、不修改全局状态）。
+2. **完整类型注解**：所有参数和返回值须有类型注解（`pd.DataFrame`、`list[dict]`、`Optional[str]` 等）。
+3. **JSON 可序列化 I/O**：输入参数和返回值（DataFrame 除外）应可被 `json.dumps` 序列化，便于 agent 传参和解析结果。
+4. **中文 docstring**（见上文「Docstring 规范」）。
+
+## 统计标准
+
+- **所有统计检验前需自动检查适用条件**：
+  - **正态性**：如 Shapiro-Wilk、Kolmogorov-Smirnov 或 D'Agostino-Pearson；小样本时注意检验功效。
+  - **方差齐性**：如 Levene 或 Bartlett。
+- **根据检查结果选择方法**：
+  - 满足正态性且方差齐性 → 参数方法（如 t 检验、ANOVA）。
+  - 不满足 → 使用非参数或稳健方法（如 Mann-Whitney、Kruskal-Wallis、Welch ANOVA 等），并在结果中注明原因。
+- 在 UI 或导出结果中可简要注明"已做正态性/方差齐性检查及所选方法"。
+
+## 数据处理基本原则（参考 wjxspss）
+
+以下原则来源于《SPSSAU 问卷/量表数据分析方法与应用》及 `UserResearch/功能可执行清单_参考wjxspss.md`，作为项目级约定统一执行：
+
+1. **先探索后清理再分析**：在正式做推断或建模前，先对数据进行探索（数据特征、缺失、异常、分布）；在了解情况后再决定是否清理及如何清理，然后再进行检验或回归等分析。
+2. **分析前心中有数**：探索阶段应对缺失、异常值、整体分布做到心中有数；必要时在 UI 或导出中简要说明"已做探索/异常处理/分布检查"。
+3. **数据类型决定分析方法**：定类/定量及变量组合决定适用方法（如定类–定类用卡方等、定量–定量用相关/回归）；实现或推荐分析时须与数据类型一致，避免误用。
+4. **适用条件不满足时先转换或改方法**：参数方法要求满足正态性、方差齐性等；不满足时先考虑数据转换或改用非参数/稳健方法，并在结果中注明（与上文「统计标准」一致）。
+
+## 文档与迭代可见性
+
+- **README 与 DEV_LOG** 须保持可读性，使任何人（含对话重开后）能通过二者理解项目的**前情提要、后续计划及完成情况**。
+- **重要 .md 文档**（需求/清单/验收/计划类）须在 **README 或 DEV_LOG** 中有**说明与映射**（如文档用途、与 README/DEV_LOG 的对应关系），避免对话或人员切换后不知所据。
+
+## 输入/输出与依赖约定
+
+- **输入格式**：支持 `.csv`、`.sav`、`.xlsx`；**权威示例**以 `UserResearch/input_example` 为准，新增/变更格式须与该目录示例对齐。
+- **.sav 支持**：若支持 `.sav` 读取，须依赖 **pyreadstat**（或项目指定的同功能库），并在 **README 与依赖文件（如 requirements.txt）** 中注明。
+- **导出 .xlsx**：默认**每次分析一个工作簿、多张 sheet**（如描述统计、交叉表、回归结果等）；并**允许用户勾选要导出的内容后再打包成多 sheet**。
+
+## 示例（统计分支）
+
+```python
+# 伪代码：先检查再选方法（实际函数签名见 survey_tools/core/quant.py）
+# 优先使用 pingouin：pg.normality(), pg.homoscedasticity(), pg.anova() 等
+# 存量代码不要求立即迁移，但新增检验函数必须用 Pingouin
+
+def run_group_difference_test(df, group_col, value_col, question_type):
+    groups = [g[value_col].dropna() for _, g in df.groupby(group_col)]
+    normal_ok = all(pg.normality(g).loc[0, "normal"] for g in groups)
+    homoscedastic = pg.homoscedasticity(df, dv=value_col, group=group_col).loc[0, "equal_var"]
+    if normal_ok and homoscedastic:
+        return pg.anova(df, dv=value_col, between=group_col)   # 参数
+    return pg.kruskal(df, dv=value_col, between=group_col)     # 非参数
+```
+
+---
+
+## 题型判断优先级（防误判约定）
+
+以下优先级从高到低，**后续新增题型检测逻辑须严格遵守**：
+
+1. **排序题**：列名含「排序」关键词 → `"排序"`
+2. **多选题**：列名前缀在已知多选前缀集合中 → `"多选"`（优先于数值检测，避免 0/1 编码多选列被误判为评分）
+3. **纯 0/1 二分列**：数值列且取值仅为 {0, 1}（无论有无多选前缀）→ `"单选"`，**不得归「评分」**
+4. **评分题**：数值列，取值范围 [0, 10]，唯一值 ≤ 11 → `"评分"`
+5. **默认**：`"单选"`
+
+---
+
+## 统计口径约定
+
+**分母计算规则（必须遵守，违反会导致百分比/率系统偏差）：**
+
+- **单选 / 评分分母**：`有效作答人数 = group[q_col].notna().sum()`。不得用 `len(group)`，否则跳题 NaN 会使各选项百分比之和 < 100%。
+- **多选提及率分母**：该组在此多选题"至少有一列有值"的受访者数（`dropna(how='all')` 后的行数）。不得用总行数。
+- **排序题 Top-N 率分母**：原始 df 中 `df.groupby(label_col).size()`（真实受访者人数）。不得用转长格式后的行数（长格式每人贡献 n_rank_positions 行，会导致分母虚大）。
+- **多选 overall.p_value**：使用 FDR 校正后的最小 p 值（与 `sig_count` 口径一致），不得用未校正的原始最小值。
+
+---
+
+## Streamlit 编程约束
+
+**禁止在 `if st.button()` 块内嵌套另一个 `st.button()` 或 `st.download_button()`。**
+
+原因：点击内层按钮触发 rerun 后，外层条件不再为 True，内层按钮立即从 DOM 消失，用户操作永远无效。
+
+正确模式：
+
+```python
+# 正确：计算结果存入 session_state，导出/下载按钮在 button 块外独立渲染
+if st.button("生成报告"):
+    st.session_state["report_data"] = compute_report()
+
+if st.session_state.get("report_data") is not None:
+    if st.button("导出"):
+        ...
+    st.download_button(...)
+```
+
+---
+
+## DataFrame 安全性
+
+**函数接收 DataFrame 时，若函数体内会修改其内容（增删列、赋值等），必须先 `.copy()`。**
+
+```python
+# 错误：会隐式污染调用方的原始 df
+def __init__(self, data):
+    self.data = data           # 外部修改会反向影响
+
+# 正确
+def __init__(self, data):
+    self.data = data.copy()
+```
+
+同理，`analyzer.data["新列"] = series` 前须确保 `analyzer.data` 是副本，不得直接修改传入的原始 df。
+
+---
+
+## 质量矩阵与验证脚本规范
+
+所有纳入 `tests/run_quality_matrix.py` 的验证脚本（`verify_*.py` / `test_*.py`）须遵守：
+
+1. **找不到测试数据时必须 `sys.exit(1)`**，不得静默 `return`。静默返回会使质量矩阵显示虚假 PASS，掩盖真实未验证状态。
+2. **条件性断言是无效测试**：`if p < 0.05: assert pairwise_structure` 这类写法，在条件不满足时等于零验证。正确做法：断言无条件执行，或使用专门构造了显著性差异的 mock 数据保证条件触发。
+3. **子进程须设置超时**：`subprocess.run(..., timeout=180)`，防止脚本死循环无限挂起质量矩阵。
+4. **比对失败时 `sys.exit(1)`**：回归对比脚本（如 `test_migration.py`）在 `all_ok=False` 时必须以非零退出码退出，确保失败可被质量矩阵捕获。

@@ -1,0 +1,57 @@
+# 忽略数据文件
+data/raw/*
+data/processed/*
+input_example/*
+*.sav
+*.csv
+*.xlsx
+
+# 忽略 Python 缓存
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+
+# 忽略虚拟环境
+venv/
+.env
+
+# 忽略 macOS 系统文件
+.DS_Store
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+.eggs/
+dist/
+build/
+
+# 虚拟环境（两台机器可各自本地创建）
+.venv/
+venv/
+env/
+
+# 环境与密钥（勿提交；AI/LLM API Key 请放在 .env，勿提交）
+.env
+.env.local
+.env.*
+*.key
+
+# 玩家原始数据（input_example 及同名数据文件勿提交）
+UserResearch/input_example/*.csv
+UserResearch/input_example/*.xlsx
+UserResearch/input_example/*.sav
+*.sav
+
+# 审阅/导出产出（体积大、可本地再生）
+UserResearch/review_outputs/
+
+# 大文件与临时文件
+*.xlsx
+*.pdf
+*.docx
+.DS_Store
+Thumbs.db
+*.log
