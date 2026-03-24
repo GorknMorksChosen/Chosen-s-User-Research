@@ -153,12 +153,26 @@ def _extract_option_label(option_col):
 
 
 def _to_binary_mention(series):
-    invalid_raw = {"", "0", "否", "未选", "nan", "none", "无", "na", "n/a"}
+    """将多选列统一转换为 0/1 提及编码。
+
+    规则：
+    - 数值可解析时：仅 >0 视为提及（0/0.0/负值均视为未提及）
+    - 文本不可解析时：按无效值词表判定（含 0 与 0.0）
+    """
+    invalid_raw = {"", "0", "0.0", "否", "未选", "nan", "none", "无", "na", "n/a"}
     invalid_lower = {s.lower() for s in invalid_raw}
+
+    numeric = pd.to_numeric(series, errors="coerce")
+    is_numeric = numeric.notna()
+    numeric_mention = numeric > 0
+
     ser_str = series.astype(str).str.strip()
-    not_na = ~series.isna()
-    is_valid_text = ~ser_str.str.lower().isin(invalid_lower)
-    return (not_na & is_valid_text).astype(int)
+    text_mention = (~series.isna()) & (~ser_str.str.lower().isin(invalid_lower))
+
+    return pd.Series(
+        np.where(is_numeric, numeric_mention, text_mention),
+        index=series.index,
+    ).astype(int)
 
 
 def _two_proportion_z_test(x1: int, n1: int, x2: int, n2: int) -> Tuple[float, float]:
@@ -578,8 +592,13 @@ def run_group_difference_test(
                 if arr.size >= 8:
                     _, p_norm = stats.normaltest(arr)
                     normal_flags.append(p_norm > 0.05)
+                elif arr.size >= 3:
+                    # 小样本不再默认“通过”，改用 Shapiro 保守判断
+                    _, p_norm = stats.shapiro(arr)
+                    normal_flags.append(p_norm > 0.05)
                 else:
-                    normal_flags.append(True)
+                    # 样本过小，按不满足正态处理，避免误入参数法
+                    normal_flags.append(False)
             if len(groups) >= 2 and all(len(arr) >= 2 for arr in groups):
                 _, levene_p = stats.levene(*groups)
             else:
@@ -1555,5 +1574,6 @@ def run_quant_cross_engine(
                 continue
             for col in cols:
                 table = analyze_single_choice(df, core_segment_col, col)
-                results.append({"题目": col, "题型": spec.q_type, "数据": table, "stats": _compute_stats(col, "单选")})
+                test_q_type = "评分" if spec.q_type == "矩阵评分" else "单选"
+                results.append({"题目": col, "题型": spec.q_type, "数据": table, "stats": _compute_stats(col, test_q_type)})
     return results

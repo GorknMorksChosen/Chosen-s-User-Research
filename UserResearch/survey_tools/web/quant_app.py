@@ -161,7 +161,7 @@ def analyze_multi_choice(df, core_segment_col, prefix, option_cols):
         )
     return pd.DataFrame(records)
 
-def pivot_v13_style(df_long, q_type, core_segment_col, option_order=None, stats_res=None):
+def pivot_v13_style(df_long, q_type, core_segment_col, option_order=None, stats_res=None, alpha=0.05):
     """Convert long-form analysis results to v1.3 style pivot table.
     option_order: for 多选, list of option labels in questionnaire order; pivot rows will follow this order.
     stats_res: result dict from run_group_difference_test（H3：不再依赖 df._stats 死代码）.
@@ -196,7 +196,7 @@ def pivot_v13_style(df_long, q_type, core_segment_col, option_order=None, stats_
             
             # Format P-value
             if p_val is not None and not np.isnan(p_val):
-                sig = "***" if p_val < 0.001 else "**" if p_val < 0.01 else "*" if p_val < 0.05 else ""
+                sig = "***" if p_val < 0.001 else "**" if p_val < 0.01 else "*" if p_val < alpha else ""
                 pivot["P值"] = f"{p_val:.3f}{sig}"
             else:
                 pivot["P值"] = ""
@@ -283,7 +283,7 @@ def pivot_v13_style(df_long, q_type, core_segment_col, option_order=None, stats_
                  def format_p(lbl):
                      val = p_map.get(lbl)
                      if val is not None and not (isinstance(val, float) and np.isnan(val)):
-                         sig = "***" if val < 0.001 else "**" if val < 0.01 else "*" if val < 0.05 else ""
+                         sig = "***" if val < 0.001 else "**" if val < 0.01 else "*" if val < alpha else ""
                          return f"{val:.3f}{sig}"
                      return ""
                      
@@ -301,7 +301,7 @@ def pivot_v13_style(df_long, q_type, core_segment_col, option_order=None, stats_
                  # Fallback to overall
                  p_val = overall.get("p_value")
                  if p_val is not None and not np.isnan(p_val):
-                     sig = "***" if p_val < 0.001 else "**" if p_val < 0.01 else "*" if p_val < 0.05 else ""
+                     sig = "***" if p_val < 0.001 else "**" if p_val < 0.01 else "*" if p_val < alpha else ""
                      pivot["P值"] = f"{p_val:.3f}{sig}"
                  else:
                      pivot["P值"] = ""
@@ -855,11 +855,22 @@ def main():
                     analysis_cols.extend(selection_map[label])
 
             st.markdown("---")
-            run_col1, run_col2 = st.columns([3, 1])
+            alpha_col, run_col1, run_col2 = st.columns([1, 2, 1])
+            with alpha_col:
+                sig_alpha = st.number_input(
+                    "显著性阈值 alpha",
+                    min_value=0.001,
+                    max_value=0.2,
+                    value=float(st.session_state.get("quant_sig_alpha", 0.05)),
+                    step=0.001,
+                    format="%.3f",
+                    key="quant_sig_alpha",
+                    help="统计检验显著性阈值；页面提示、导出星号和检验判定将统一使用该值。",
+                )
             with run_col2:
                  run_btn = st.button("开始交叉分析", type="primary", use_container_width=True)
             with run_col1:
-                 st.caption("点击按钮后，系统将自动进行：交叉制表、卡方检验/ANOVA检验、效应量计算及P值标记。")
+                 st.caption(f"点击按钮后，系统将自动进行：交叉制表、卡方检验/ANOVA检验、效应量计算及P值标记（alpha={sig_alpha:.3f}）。")
         
         if run_btn:
             if core_segment_col is None:
@@ -938,6 +949,7 @@ def main():
                     ignored_cols_set=ignored_cols_set,
                     explicit_single_cols=explicit_single_cols,
                     explicit_rating_cols=explicit_rating_cols,
+                    alpha=float(sig_alpha),
                 )
 
                 # 结果按题号全局排序：Q1、Q2、Q3...
@@ -989,6 +1001,7 @@ def main():
                     df_q, q_type, st.session_state.core_segment_col,
                     option_order=res.get("option_order"),
                     stats_res=res.get("stats"),  # H3: 传入真实 stats
+                    alpha=float(st.session_state.get("quant_sig_alpha", 0.05)),
                 )
                 # Formatting for display
                 if "总计" in pivot_df.columns:
@@ -1053,6 +1066,7 @@ def main():
                     df_q, q_type, st.session_state.core_segment_col,
                     option_order=res.get("option_order"),
                     stats_res=res.get("stats"),  # H3
+                    alpha=float(st.session_state.get("quant_sig_alpha", 0.05)),
                 )
             except Exception as e:
                 pivot_df = df_q.copy()
@@ -1148,7 +1162,7 @@ def main():
                     )
                     if st.button("运行单选题组间差异检验", key="run_single_choice_test"):
                         test_res = run_group_difference_test(
-                            df, core_segment_col, single_col, "单选"
+                            df, core_segment_col, single_col, "单选", alpha=float(sig_alpha)
                         )
                         overall = test_res.get("overall") or {}
                         p_val = overall.get("p_value")
@@ -1164,10 +1178,10 @@ def main():
                                 "效应量解释": effect_comment,
                             }
                         )
-                        if p_val is not None and pd.notna(p_val) and p_val < 0.05:
-                            st.error("该单选题在不同分组之间存在显著差异（p < 0.05）。")
+                        if p_val is not None and pd.notna(p_val) and p_val < sig_alpha:
+                            st.error(f"该单选题在不同分组之间存在显著差异（p < {sig_alpha:.3f}）。")
                         else:
-                            st.info("未检测到该单选题在不同分组之间的显著差异（p ≥ 0.05）。")
+                            st.info(f"未检测到该单选题在不同分组之间的显著差异（p ≥ {sig_alpha:.3f}）。")
         with tab_rating:
             if core_segment_col is None:
                 st.info("请先在上方选择核心分组列，并完成一次基础交叉分析。")
@@ -1192,7 +1206,7 @@ def main():
                         st.subheader("评分题基础统计指标")
                         st.dataframe(metrics_df, use_container_width=True)
                         test_res = run_group_difference_test(
-                            df, core_segment_col, rating_col, "评分"
+                            df, core_segment_col, rating_col, "评分", alpha=float(sig_alpha)
                         )
                         overall = test_res.get("overall") or {}
                         pairwise = test_res.get("pairwise")
@@ -1206,10 +1220,10 @@ def main():
                                 "效应量(η²)": overall.get("effect_size"),
                             }
                         )
-                        if p_val is not None and pd.notna(p_val) and p_val < 0.05:
-                            st.error("该评分题在不同分组之间存在显著差异（p < 0.05）。")
+                        if p_val is not None and pd.notna(p_val) and p_val < sig_alpha:
+                            st.error(f"该评分题在不同分组之间存在显著差异（p < {sig_alpha:.3f}）。")
                         else:
-                            st.info("未检测到显著的组间差异（p ≥ 0.05）。")
+                            st.info(f"未检测到显著的组间差异（p ≥ {sig_alpha:.3f}）。")
                         if isinstance(pairwise, pd.DataFrame) and not pairwise.empty:
                             st.subheader("两两组间差异结果")
                             st.dataframe(pairwise, use_container_width=True)
@@ -1226,7 +1240,7 @@ def main():
                                 pv = row.get("p_value")
                                 if g1 not in means or g2 not in means:
                                     continue
-                                if pv is None or pd.isna(pv) or pv >= 0.05:
+                                if pv is None or pd.isna(pv) or pv >= sig_alpha:
                                     continue
                                 key_pair = tuple(sorted([str(g1), str(g2)]))
                                 if key_pair in seen_pairs:
@@ -1248,7 +1262,7 @@ def main():
                                 st.subheader("一句话结论")
                                 st.write("；".join(conclusions[:5]))
                             else:
-                                if p_val is not None and pd.notna(p_val) and p_val < 0.05:
+                                if p_val is not None and pd.notna(p_val) and p_val < sig_alpha:
                                     st.subheader("一句话结论")
                                     st.write(
                                         f"在评分题「{rating_col}」上，不同分组之间整体存在显著差异，但未提取出稳定的两两差异结论。"
@@ -1294,10 +1308,10 @@ def main():
                             st.dataframe(test_df, use_container_width=True)
                             sig_pairs = test_df[
                                 (test_df["p_value"].notna())
-                                & (test_df["p_value"] < 0.05)
+                                & (test_df["p_value"] < sig_alpha)
                             ]
                             if not sig_pairs.empty:
-                                st.subheader("显著差异选项对（p < 0.05）")
+                                st.subheader(f"显著差异选项对（p < {sig_alpha:.3f}）")
                                 lines = []
                                 for _, row in sig_pairs.iterrows():
                                     lines.append(
@@ -1305,7 +1319,7 @@ def main():
                                     )
                                 st.write("；".join(lines))
                             else:
-                                st.info("在该题内部，各选项之间未检测到显著差异（p ≥ 0.05）。")
+                                st.info(f"在该题内部，各选项之间未检测到显著差异（p ≥ {sig_alpha:.3f}）。")
 
                 st.subheader("多选 / 矩阵单选题：组间差异概览（卡方 / Fisher）")
                 if type_df is not None:
@@ -1347,11 +1361,17 @@ def main():
                             for col in option_cols_between:
                                 tmp = df[[core_segment_col, col]].copy()
                                 tmp[col] = tmp[col].apply(
-                                    lambda v: "提及" if not pd.isna(v) and str(v).strip() not in ("", "0") else "未提及"
+                                    lambda v: "提及"
+                                    if (
+                                        not pd.isna(v)
+                                        and str(v).strip().lower()
+                                        not in ("", "0", "0.0", "nan", "none", "na", "n/a", "未选", "否")
+                                    )
+                                    else "未提及"
                                 )
                                 # H1: 多选类型需传列表；列已预处理为"提及"/"未提及"，用单选检验更准确
                                 res = run_group_difference_test(
-                                    tmp, core_segment_col, col, "单选"
+                                    tmp, core_segment_col, col, "单选", alpha=float(sig_alpha)
                                 )
                                 overall = res.get("overall") or {}
                                 p_val = overall.get("p_value")
@@ -1415,17 +1435,17 @@ def main():
                         if (
                             overall.get("p_value") is not None
                             and pd.notna(overall.get("p_value"))
-                            and overall.get("p_value") < 0.05
+                            and overall.get("p_value") < sig_alpha
                         ):
-                            st.error("该矩阵评分题的各子项之间整体存在显著差异（p < 0.05）。")
+                            st.error(f"该矩阵评分题的各子项之间整体存在显著差异（p < {sig_alpha:.3f}）。")
                         else:
-                            st.info("未检测到矩阵子项之间显著的总体差异（p ≥ 0.05）。")
+                            st.info(f"未检测到矩阵子项之间显著的总体差异（p ≥ {sig_alpha:.3f}）。")
                         if isinstance(pairwise, pd.DataFrame) and not pairwise.empty:
                             st.subheader("两两子项对比结果（Wilcoxon）")
                             st.dataframe(pairwise, use_container_width=True)
                             sig_pairs = pairwise[
                                 (pairwise["p_value"].notna())
-                                & (pairwise["p_value"] < 0.05)
+                                & (pairwise["p_value"] < sig_alpha)
                             ]
                             if not sig_pairs.empty:
                                 st.subheader("一句话结论示例")
@@ -1439,7 +1459,7 @@ def main():
                                 if (
                                     overall.get("p_value") is not None
                                     and pd.notna(overall.get("p_value"))
-                                    and overall.get("p_value") < 0.05
+                                    and overall.get("p_value") < sig_alpha
                                 ):
                                     st.subheader("一句话结论示例")
                                     st.write(

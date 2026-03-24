@@ -8,6 +8,34 @@
 
 ## 📅 2026-03-23（最新）
 
+### P0-A 首批落地 + 最小 pytest 门禁
+
+**涉及文件**：
+- `survey_tools/core/quant.py`
+- `survey_tools/web/quant_app.py`
+- `game_analyst.py`
+- `tool_registry.py`
+- `tests/test_quant_core_pytest.py`（新增）
+- `README.md`
+
+**变更内容**：
+- **A1（矩阵评分路由）**：`run_quant_cross_engine` 中矩阵评分子项改为按“评分”检验，不再误走“单选”路径。
+- **A2（小样本策略）**：评分题 `k>2` 分支中，小样本不再默认正态通过；`3<=n<8` 改用 Shapiro，`n<3` 按不满足正态处理，避免误入参数法。
+- **A3（多选提及编码）**：统一 `_to_binary_mention` 规则，显式纳入 `0.0`，并采用“数值>0为提及、文本词表兜底”逻辑。
+- **A4（alpha 三层统一）**：
+  - Quant Web 增加显著性阈值输入（`quant_sig_alpha`）；
+  - 统计调用、页面提示、导出 `P值` 星号统一使用同一 `alpha`。
+- **B1 先行收口**：`game_analyst.py` UI 侧改为优先复用 `survey_tools.core.advanced_modeling.GameExperienceAnalyzer`（本地旧类改名为 `LegacyGameExperienceAnalyzer` 作为过渡）。
+- **C1 对齐修复**：`tool_registry.py` 中不存在的 Quant CLI 入口改为 `None`；`game_analyst` 的 `core_fn` 指向 core 单一事实源。
+- **D1 落地**：新增 `tests/test_quant_core_pytest.py`，覆盖单选/多选/评分小样本/矩阵评分路由 4 个关键分支。
+
+**验证结果**：
+- `python -m pytest UserResearch/tests/test_quant_core_pytest.py -q` -> `4 passed`
+- `python UserResearch/tests/auto_verify_v1.py` -> 通过
+- `python UserResearch/tests/verify_no_legacy_quant_engine_import.py` -> PASS
+
+---
+
 ### 项目计划 V2 发布（可信度优先）
 
 **涉及文件**：

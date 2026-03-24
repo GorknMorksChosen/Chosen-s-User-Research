@@ -28,12 +28,13 @@ from survey_tools.core.factor_compat import (
     build_factor_compat_message,
 )
 from survey_tools.core.missing_strategy import apply_missing_strategy
+from survey_tools.core.advanced_modeling import GameExperienceAnalyzer
 from survey_tools.utils.io import read_table_auto
 from survey_tools.utils.wjx_header import normalize_wjx_headers
 
 # 版本兼容性处理将在具体函数中通过try-except方式处理
 
-class GameExperienceAnalyzer:
+class LegacyGameExperienceAnalyzer:
     """
     游戏体验深度分析工具类
     提供全链路分析：数据体检 → 相关性 → 因子聚类 → 玩家分群 → 因果回归 → 路径分析

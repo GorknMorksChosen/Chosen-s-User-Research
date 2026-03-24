@@ -11,7 +11,7 @@ TOOLS: list[dict] = [
         "id": "quant",
         "name": "问卷定量交叉分析 (Quant Engine 2.0)",
         "entry": "survey_tools/web/quant_app.py",
-        "cli": "survey_tools/cli/quant_cli.py",
+        "cli": None,
         "core_fn": "survey_tools.core.quant.run_quant_cross_engine",
         "port": 8501,
         "stage": "web",
@@ -76,7 +76,7 @@ TOOLS: list[dict] = [
         "name": "全链路归因分析工具 (Advanced)",
         "entry": "game_analyst.py",
         "cli": None,
-        "core_fn": "game_analyst.GameExperienceAnalyzer",
+        "core_fn": "survey_tools.core.advanced_modeling.GameExperienceAnalyzer",
         "port": 8503,
         "stage": "web",
         "description": (
