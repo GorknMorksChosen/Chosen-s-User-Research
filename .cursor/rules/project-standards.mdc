@@ -248,6 +248,7 @@ def __init__(self, data):
 3. **子进程须设置超时**：`subprocess.run(..., timeout=180)`，防止脚本死循环无限挂起质量矩阵。
 4. **比对失败时 `sys.exit(1)`**：回归对比脚本（如 `test_migration.py`）在 `all_ok=False` 时必须以非零退出码退出，确保失败可被质量矩阵捕获。
 
+---
 
 ## 文档与命名风格约束 (Tone & Terminology)
 
