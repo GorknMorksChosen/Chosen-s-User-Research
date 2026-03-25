@@ -128,7 +128,13 @@ _FORCE_IGNORE_KEYWORDS = [
     "答卷时间", "ip", "所用时间", "序号", "总分", "答卷编号", "逻辑", "跳转",
 ]
 _TYPE_RANK: Dict[str, int] = {
-    "单选": 1, "评分": 2, "多选": 3, "矩阵单选": 4, "矩阵评分": 5, "矩阵": 6,
+    "单选": 1,
+    "评分": 2,
+    "NPS": 2,
+    "多选": 3,
+    "矩阵单选": 4,
+    "矩阵评分": 5,
+    "矩阵": 6,
 }
 _SYNTHETIC_SEGMENT_COL = "_总体_"
 
@@ -353,6 +359,8 @@ def _auto_classify_columns(
                 q_num_to_type[q_num] = "矩阵单选"
             elif "多选" in raw:
                 q_num_to_type[q_num] = "多选"
+            elif "NPS" in raw or "NPS题" in raw:
+                q_num_to_type[q_num] = "NPS"
             elif "评分" in raw:
                 q_num_to_type[q_num] = "评分"
             elif "填空" in raw or "开放" in raw:
@@ -376,6 +384,8 @@ def _auto_classify_columns(
                     q_num_to_type[q_num] = "矩阵单选"
             elif "多选" in otype:
                 q_num_to_type[q_num] = "多选"
+            elif "NPS" in str(otype).upper() or "nps" in str(otype).lower():
+                q_num_to_type[q_num] = "NPS"
             elif "填空" in otype or "文本" in otype:
                 q_num_to_type[q_num] = "忽略"
             # "单选题" / "评分题" 不覆盖，由数据值特征决定
@@ -492,7 +502,7 @@ def _resolve_segment_col(
         print(f"  ⚠  --segment-col 未匹配到含「{segment_col_hint}」的列，回退到自动识别。")
 
     for col in df.columns:
-        if column_type_map.get(col) in ("忽略", "评分", "矩阵评分"):
+        if column_type_map.get(col) in ("忽略", "评分", "NPS", "矩阵评分"):
             continue
         lower = str(col).lower()
         for kw in _SEGMENT_KEYWORDS:
@@ -529,7 +539,7 @@ def _simple_pivot(res: dict, option_list: Optional[List[str]] = None) -> pd.Data
     if df_q.empty:
         return df_q
     try:
-        if q_type in ("单选", "评分", "矩阵单选", "矩阵评分"):
+        if q_type in ("单选", "评分", "NPS", "矩阵单选", "矩阵评分"):
             # Step 1: 透视（保留原始选项值）
             pivot = df_q.pivot_table(
                 index="选项",
@@ -794,7 +804,9 @@ def _build_question_block(
         rows.append(nps_row)
         return rows
 
-    is_nps = q_type in ("单选", "评分") and _is_nps_question(question, df_q)
+    is_nps = q_type == "NPS" or (
+        q_type in ("单选", "评分") and _is_nps_question(question, df_q)
+    )
 
     # 计算均值（仅当选项含数字分值时；NPS 题不输出均值，避免与国际口径混淆）
     mean_val: Optional[float] = None
@@ -1158,10 +1170,16 @@ def _run_quant_cross(
     ignored_cols.add(segment_col)
 
     question_types: Dict[str, List[int]] = {
-        "单选": [], "多选": [], "评分": [], "矩阵单选": [], "矩阵评分": [],
+        "单选": [],
+        "多选": [],
+        "评分": [],
+        "NPS": [],
+        "矩阵单选": [],
+        "矩阵评分": [],
     }
     explicit_single_cols: List[str] = []
     explicit_rating_cols: List[str] = []
+    explicit_nps_cols: List[str] = []
 
     for col, t in column_type_map.items():
         if col in ignored_cols:
@@ -1170,6 +1188,8 @@ def _run_quant_cross(
             explicit_single_cols.append(col)
         elif t == "评分":
             explicit_rating_cols.append(col)
+        elif t == "NPS":
+            explicit_nps_cols.append(col)
         elif t in ("矩阵单选", "矩阵评分", "矩阵"):
             # 矩阵子项按单选方式逐列分析（含无题号子项）
             # _export_results 再按 matrix_q_map 将它们重组为 2D 表
@@ -1191,6 +1211,8 @@ def _run_quant_cross(
             question_types["多选"].append(q_num)
         elif t == "评分":
             question_types["评分"].append(q_num)
+        elif t == "NPS":
+            question_types["NPS"].append(q_num)
         elif t in ("矩阵单选", "矩阵"):
             if q_num not in question_types["矩阵单选"] and q_num not in question_types["矩阵评分"]:
                 question_types["矩阵单选"].append(q_num)
@@ -1217,6 +1239,7 @@ def _run_quant_cross(
         ignored_cols_set=ignored_cols,
         explicit_single_cols=explicit_single_cols,
         explicit_rating_cols=explicit_rating_cols,
+        explicit_nps_cols=explicit_nps_cols,
         alpha=sig_alpha if sig_test else -1.0,
         min_group_size=5,
     )
@@ -1278,7 +1301,7 @@ def _run_satisfaction_modeling(
     feature_cols = [
         col
         for col, t in column_type_map.items()
-        if t == "评分" and col != target_col and col in df.columns
+        if t in ("评分", "NPS") and col != target_col and col in df.columns
     ]
 
     if len(feature_cols) < 2:
@@ -1736,8 +1759,8 @@ def _export_results(
                             q_type = str(res_obj.get("题型", ""))
                             stats_obj = (res_obj or {}).get("stats", {}) or {}
                             ps = stats_obj.get("pipeline_summary", {}) or {}
-                            # 评分题：标记均值行的分组列
-                            if q_type == "评分":
+                            # 评分 / NPS 题：标记均值行的分组列
+                            if q_type in ("评分", "NPS"):
                                 direction_map = ps.get("direction_by_group", {}) or {}
                                 mean_row_idx: Optional[int] = None
                                 for i in range(len(block_df)):

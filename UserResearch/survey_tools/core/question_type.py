@@ -27,7 +27,7 @@ def detect_column_type(col_name, series, prefix, multi_prefixes):
     """自动推断列的题型，遵循多选优先、0/1 不视为评分的判断优先级。
 
     判断优先级（高→低）：排序题 → 多选前缀匹配 → 纯 0/1 二分列（→单选）
-    → 数值范围在 [0,10] 且唯一值 ≤11（→评分）→ 默认单选。
+    → 数值范围在 [0,10] 且唯一值 ≤11 → 题干像 NPS 则 NPS，否则评分 → 默认单选。
 
     Args:
         col_name: str，列名。
@@ -56,6 +56,8 @@ def detect_column_type(col_name, series, prefix, multi_prefixes):
             if set(float(x) for x in uniq).issubset({0.0, 1.0}):
                 return "单选"
             if len(uniq) <= 11 and 0 <= vmin and vmax <= 10:
+                if stem_text_suggests_nps(name):
+                    return "NPS"
                 return "评分"
     return "单选"
 
@@ -119,16 +121,27 @@ def count_mentions(series):
     return int(mask_valid.sum())
 
 
+def stem_text_suggests_nps(text: str) -> bool:
+    """题干/列名拼接文本是否像 NPS（0–10 推荐意愿），与 Pipeline 口径对齐（启发式）。"""
+    t = str(text).replace(" ", "").lower()
+    nps_keys = ("nps", "净推荐", "推荐意愿", "推荐可能性", "推荐概率", "recommend")
+    if any(k in t for k in nps_keys):
+        return True
+    if "推荐" in t and any(k in t for k in ("意愿", "可能", "多大")):
+        return True
+    return False
+
+
 def infer_type_from_columns(info):
     """通过列名关键词推断该题目的题型（多选/矩阵/评分/填空/单选）。
 
-    将题目所有列名拼接后做关键词匹配，优先级：矩阵 > 多选 > 填空 > 单选 > 评分。
+    将题目所有列名拼接后做关键词匹配，优先级：矩阵 > 多选 > NPS > 填空 > 单选 > 评分。
 
     Args:
         info: dict，含键 "all_cols"（list[str]），该题目下所有列名的列表。
 
     Returns:
-        str or None，题型字符串如 "多选题"/"矩阵评分题"/"单选题" 等；无匹配时返回 None。
+        str or None，题型字符串如 "多选题"/"矩阵评分题"/"NPS题"/"单选题" 等；无匹配时返回 None。
     """
     cols = info.get("all_cols", [])
     if not cols:
@@ -143,6 +156,8 @@ def infer_type_from_columns(info):
         return "多选题"
     if "多选" in text and ("限选" in text or "最多选" in text):
         return "多选题"
+    if stem_text_suggests_nps(joined):
+        return "NPS题"
     if "开放题" in text or "（开放题）" in text or "【开放题】" in text:
         return "填空题"
     if "【单选】" in text or "【单选题" in text or "单选题" in text or "（单选）" in text or "(单选)" in text or "[单选]" in text:

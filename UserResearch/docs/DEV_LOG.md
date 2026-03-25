@@ -8,6 +8,20 @@
 
 ## 📅 2026-03-25（最新）
 
+### Quant：NPS 题型（自动识别 + 手动微调 + 引擎贯通）
+
+**涉及文件**：
+- `survey_tools/core/question_type.py`（题干启发式 `stem_text_suggests_nps`、`infer_type_from_columns` 返回 `NPS题`、`detect_column_type` 支持 `NPS`）
+- `survey_tools/core/quant.py`（`QuestionSpec` / `build_question_specs` / `run_quant_cross_engine` 支持 `NPS`；统计检验仍走「评分」口径）
+- `survey_tools/utils/outline_parser.py`（`outline_to_q_num_type`：大纲 NPS 题映射为 `NPS`）
+- `survey_tools/web/quant_app.py`（题型微调选项含「NPS」；交叉与高级评分 Tab 含 NPS）
+- `scripts/run_playtest_pipeline.py`（`column_type_map` 含 `NPS` 时与 Quant 一致参与交叉与回归特征）
+- `tests/test_quant_core_pytest.py`（`NPS` 规格单测）
+
+**变更内容**：
+- 定量工具中与 Pipeline 对齐：题干含 NPS/推荐意愿等且数值为 0–10 量表时，自动识别为 **NPS**（非「评分」）；题型微调中可手动改为 **NPS**。
+- 交叉引擎对 `NPS` 的检验方法与评分题相同（Welch / ANOVA / KW），导出与展示中的 **题型** 显示为 `NPS`。
+
 ### Playtest Pipeline：Web 大纲上传 + Excel Sheet 选择 + NPS 国际公式落地
 
 **涉及文件**：

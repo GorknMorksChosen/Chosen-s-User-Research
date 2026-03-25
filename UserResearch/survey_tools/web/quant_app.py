@@ -26,6 +26,7 @@ from survey_tools.core.question_type import (
     get_option_label,
     count_mentions,
     is_companion_text_column,
+    stem_text_suggests_nps,
 )
 from survey_tools.core.effect_size import interpret_effect_size
 from survey_tools.core.quant import build_question_specs, run_quant_cross_engine
@@ -176,7 +177,7 @@ def pivot_v13_style(df_long, q_type, core_segment_col, option_order=None, stats_
     if df_long.empty:
         return df_long
     
-    if q_type in ("单选", "评分", "矩阵单选", "矩阵评分"):
+    if q_type in ("单选", "评分", "NPS", "矩阵单选", "矩阵评分"):
         # Rows: 选项, Cols: 核心分组, Value: 行百分比
         pivot = df_long.pivot_table(
             index="选项", 
@@ -337,7 +338,7 @@ def build_markdown_summary(analysis_results, core_segment_col):
                 lines.append(f"- 分组：{seg_value}（n={total}）")
             else:
                 lines.append(f"- 分组：{seg_value}")
-            if q_type in ("单选", "评分", "矩阵单选", "矩阵评分"):
+            if q_type in ("单选", "评分", "NPS", "矩阵单选", "矩阵评分"):
                 group_sorted = group.sort_values("行百分比", ascending=False)
                 for _, row in group_sorted.iterrows():
                     pct = row["行百分比"] * 100
@@ -371,7 +372,7 @@ def build_json_summary(analysis_results, core_segment_col):
                 if "组样本数" in df_q.columns
                 else None,
             }
-            if q_type in ("单选", "评分", "矩阵单选", "矩阵评分"):
+            if q_type in ("单选", "评分", "NPS", "矩阵单选", "矩阵评分"):
                 item["count"] = int(row["频次"])
                 item["ratio"] = float(row["行百分比"])
             else:
@@ -589,6 +590,7 @@ def main():
                     # 兼容 infer_type_from_columns 的长格式与 outline 的短格式
                     if v13_type in ("多选题", "多选"): final_type = "多选"
                     elif v13_type in ("单选题", "单选"): final_type = "单选"
+                    elif v13_type in ("NPS题", "NPS"): final_type = "NPS"
                     elif v13_type in ("评分题", "评分"): final_type = "评分"
                     elif v13_type in ("矩阵单选题", "矩阵"): final_type = "矩阵"
                     elif v13_type in ("矩阵评分题", "矩阵评分"): final_type = "矩阵"
@@ -626,7 +628,11 @@ def main():
                                     vmin = float(pd.Series(uniq).min())
                                     vmax = float(pd.Series(uniq).max())
                                     if len(uniq) <= 11 and 0 <= vmin and vmax <= 10:
-                                        final_type = "评分"
+                                        final_type = (
+                                            "NPS"
+                                            if stem_text_suggests_nps(c_str)
+                                            else "评分"
+                                        )
 
                 # 组合分组列是“分析维度列”，默认不参与题目统计，避免污染题目列表
                 if str(c) in combined_names:
@@ -647,7 +653,7 @@ def main():
                 column_config={
                     "题型": st.column_config.SelectboxColumn(
                         "题型",
-                        options=["单选", "多选", "评分", "矩阵", "排序", "忽略"],
+                        options=["单选", "多选", "评分", "NPS", "矩阵", "排序", "忽略"],
                     )
                 },
                 hide_index=True,
@@ -895,19 +901,29 @@ def main():
                 selected_cols_set = set(analysis_cols)
                 ignored_cols_set = {c for c, t in column_type_map.items() if t == "忽略"}
 
-                question_types = {"单选": [], "多选": [], "评分": [], "矩阵单选": [], "矩阵评分": []}
+                question_types = {
+                    "单选": [],
+                    "多选": [],
+                    "评分": [],
+                    "NPS": [],
+                    "矩阵单选": [],
+                    "矩阵评分": [],
+                }
                 explicit_single_cols = []
                 explicit_rating_cols = []
+                explicit_nps_cols = []
                 for c in selected_cols_set:
                     if c in ignored_cols_set:
                         continue
                     q_str = extract_qnum(str(c))
                     t = column_type_map.get(c)
-                    # 单选/评分直接按列统计（不强依赖列名中存在 Q<num>）
+                    # 单选/评分/NPS 直接按列统计（不强依赖列名中存在 Q<num>）
                     if t == "单选":
                         explicit_single_cols.append(c)
                     elif t == "评分":
                         explicit_rating_cols.append(c)
+                    elif t == "NPS":
+                        explicit_nps_cols.append(c)
 
                     if not q_str:
                         continue
@@ -921,6 +937,8 @@ def main():
                         question_types["多选"].append(q_num)
                     elif t == "评分":
                         question_types["评分"].append(q_num)
+                    elif t == "NPS":
+                        question_types["NPS"].append(q_num)
                     elif t == "矩阵":
                         # M2: 同一 q_num 只允许进入一个矩阵类型，避免重复分析
                         already_in_matrix = (
@@ -947,6 +965,7 @@ def main():
                     ignored_cols_set=ignored_cols_set,
                     explicit_single_cols=explicit_single_cols,
                     explicit_rating_cols=explicit_rating_cols,
+                    explicit_nps_cols=explicit_nps_cols,
                     alpha=float(sig_alpha),
                 )
 
@@ -956,6 +975,7 @@ def main():
                     order = {
                         "单选": 10,
                         "评分": 20,
+                        "NPS": 20,
                         "多选": 30,
                         "矩阵单选": 40,
                         "矩阵评分": 50,
@@ -1024,7 +1044,7 @@ def main():
                 st.dataframe(df_q, use_container_width=True)
 
             try:
-                if q_type in ("单选", "评分", "矩阵单选", "矩阵评分"):
+                if q_type in ("单选", "评分", "NPS", "矩阵单选", "矩阵评分"):
                     fig = px.bar(
                         df_q,
                         x="核心分组",
@@ -1186,12 +1206,14 @@ def main():
             else:
                 type_df = st.session_state.column_type_df
                 rating_cols = (
-                    type_df[type_df["题型"] == "评分"]["列名"].tolist()
+                    type_df[type_df["题型"].isin(["评分", "NPS"])]["列名"].tolist()
                     if type_df is not None
                     else []
                 )
                 if not rating_cols:
-                    st.info("当前题型标记中尚未设置任何评分题。请在“题型微调”中将相应列标记为“评分”。")
+                    st.info(
+                        "当前题型标记中尚未设置任何评分题或 NPS 题。请在「题型微调」中将相应列标记为「评分」或「NPS」。"
+                    )
                 else:
                     rating_col = st.selectbox(
                         "选择需要进行组间差异检验的评分题列",

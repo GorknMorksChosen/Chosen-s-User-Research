@@ -322,7 +322,9 @@ def outline_to_q_num_type(outline: Dict[int, dict]) -> Dict[int, str]:
             q_num_to_type[q_num] = "多选"
         elif "填空" in otype or "文本" in otype:
             q_num_to_type[q_num] = "忽略"
-        elif "量表" in otype or "NPS" in otype:
+        elif "NPS" in str(otype).upper() or "nps" in str(otype).lower():
+            q_num_to_type[q_num] = "NPS"
+        elif "量表" in otype:
             q_num_to_type[q_num] = "评分"
         elif "单选" in otype:
             q_num_to_type[q_num] = "单选"

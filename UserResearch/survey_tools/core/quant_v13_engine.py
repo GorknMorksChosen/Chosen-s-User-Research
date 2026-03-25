@@ -41,6 +41,7 @@ def run_v13_like_cross(
     ignored_cols_set: Optional[Iterable[str]] = None,
     explicit_single_cols: Optional[Sequence[str]] = None,
     explicit_rating_cols: Optional[Sequence[str]] = None,
+    explicit_nps_cols: Optional[Sequence[str]] = None,
 ) -> List[dict]:
     warnings.warn(
         "run_v13_like_cross() 已弃用，请改用 survey_tools.core.quant.run_quant_cross_engine()。",
@@ -55,5 +56,6 @@ def run_v13_like_cross(
         ignored_cols_set=ignored_cols_set,
         explicit_single_cols=explicit_single_cols,
         explicit_rating_cols=explicit_rating_cols,
+        explicit_nps_cols=explicit_nps_cols,
     )
 

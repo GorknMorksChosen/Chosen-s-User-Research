@@ -1324,15 +1324,16 @@ def run_question_analysis(
     Returns:
         dict，分析结果；格式取决于 mode 和 question_type，空结果返回 {}。
     """
-    if mode == "describe" and question_type == "评分" and value_col is not None:
+    if mode == "describe" and question_type in ("评分", "NPS") and value_col is not None:
         return {"describe": calculate_rating_metrics(df, value_col, group_col)}
     if mode == "between":
         if question_type == "多选" and group_col is not None and (value_cols is not None or value_col is not None):
             col_arg = value_cols if (value_cols is not None and len(value_cols) > 0) else ([value_col] if value_col is not None else None)
             if col_arg is not None:
                 return run_group_difference_test(df, group_col, col_arg, question_type, min_group_size)
-        if question_type in ("单选", "评分") and value_col is not None and group_col is not None:
-            return run_group_difference_test(df, group_col, value_col, question_type, min_group_size)
+        if question_type in ("单选", "评分", "NPS") and value_col is not None and group_col is not None:
+            qt = "评分" if question_type == "NPS" else question_type
+            return run_group_difference_test(df, group_col, value_col, qt, min_group_size)
         return {"overall": None, "pairwise": None}
     if mode == "within":
         if question_type in ("多选", "矩阵单选") and value_cols:
@@ -1352,7 +1353,7 @@ from typing import Iterable, List, Optional, Sequence
 
 @dataclass(frozen=True)
 class QuestionSpec:
-    q_type: str  # '单选'|'多选'|'评分'|'矩阵单选'|'矩阵评分'
+    q_type: str  # '单选'|'多选'|'评分'|'NPS'|'矩阵单选'|'矩阵评分'
     q_num: int
     option_order: Optional[List[str]] = None
 
@@ -1401,7 +1402,7 @@ def build_question_specs(
 
     specs: List[QuestionSpec] = []
     for q_type, q_nums in (question_types or {}).items():
-        if q_type not in ("单选", "多选", "评分", "矩阵单选", "矩阵评分"):
+        if q_type not in ("单选", "多选", "评分", "NPS", "矩阵单选", "矩阵评分"):
             continue
         for q_num in q_nums:
             q_num_str = str(q_num)
@@ -1437,6 +1438,7 @@ def run_quant_cross_engine(
     ignored_cols_set: Optional[Iterable[str]] = None,
     explicit_single_cols: Optional[Sequence[str]] = None,
     explicit_rating_cols: Optional[Sequence[str]] = None,
+    explicit_nps_cols: Optional[Sequence[str]] = None,
     alpha: float = 0.05,
     min_group_size: int = 5,
 ) -> List[dict]:
@@ -1533,9 +1535,16 @@ def run_quant_cross_engine(
         results.append({"题目": col, "题型": "评分", "数据": table, "stats": _compute_stats(col, "评分")})
         seen_single_like.add(str(col))
 
+    for col in (explicit_nps_cols or []):
+        if not ok_col(col):
+            continue
+        table = analyze_single_choice(df, core_segment_col, col)
+        results.append({"题目": col, "题型": "NPS", "数据": table, "stats": _compute_stats(col, "评分")})
+        seen_single_like.add(str(col))
+
     for spec in question_specs:
         q_num_str = str(spec.q_num)
-        if spec.q_type in ("单选", "评分"):
+        if spec.q_type in ("单选", "评分", "NPS"):
             cols = _v13_new_format_cols(df, q_num_str, want_colon=False)
             if not cols:
                 cols = _v13_cols_for_qnum(df, q_num_str, want_colon=False)
@@ -1546,7 +1555,11 @@ def run_quant_cross_engine(
             if str(col) in seen_single_like:
                 continue
             table = analyze_single_choice(df, core_segment_col, col)
-            results.append({"题目": col, "题型": spec.q_type, "数据": table, "stats": _compute_stats(col, spec.q_type)})
+            test_kind = "评分" if spec.q_type == "NPS" else spec.q_type
+            out_type = "NPS" if spec.q_type == "NPS" else spec.q_type
+            results.append(
+                {"题目": col, "题型": out_type, "数据": table, "stats": _compute_stats(col, test_kind)}
+            )
         elif spec.q_type == "多选":
             cols = _v13_new_format_cols(df, q_num_str, want_colon=True)
             if not cols:

@@ -53,6 +53,29 @@ def test_rating_small_sample_prefers_nonparametric_when_needed():
     assert res["assumption_checks"]["decision"] in ("ANOVA", "Kruskal-Wallis")
 
 
+def test_nps_spec_outputs_nps_type_and_uses_rating_test():
+    df = pd.DataFrame(
+        {
+            "seg": ["A"] * 6 + ["B"] * 6,
+            "Q3.您有多大的意愿推荐": [9, 10, 8, 7, 6, 5] + [5, 4, 3, 2, 1, 0],
+        }
+    )
+    specs = [QuestionSpec(q_type="NPS", q_num=3, option_order=None)]
+    out = run_quant_cross_engine(
+        df,
+        core_segment_col="seg",
+        question_specs=specs,
+        selected_cols_set=set(df.columns),
+        ignored_cols_set=set(),
+        alpha=0.05,
+        min_group_size=3,
+    )
+    assert len(out) == 1
+    assert out[0]["题型"] == "NPS"
+    assert out[0]["stats"] is not None
+    assert out[0]["stats"]["overall"]["test"] in ("welch_t", "ANOVA", "Kruskal-Wallis")
+
+
 def test_matrix_rating_routes_to_rating_stats_in_cross_engine():
     df = _build_base_df()
     specs = [QuestionSpec(q_type="矩阵评分", q_num=3, option_order=None)]
