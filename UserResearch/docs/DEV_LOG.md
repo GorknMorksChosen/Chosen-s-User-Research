@@ -37,6 +37,20 @@
   - 产物：`20260324_Playtest自动化分析报告 (3).xlsx`  
   - 结论：第 3 题按 NPS 口径输出，不再显示平均分。
 
+### Web：问卷大纲上传逻辑抽离（Quant / Pipeline 共用）
+
+**涉及文件**：
+- `survey_tools/web/outline_upload.py`（新增）
+- `survey_tools/web/quant_app.py`
+- `survey_tools/web/pipeline_app.py`
+
+**变更内容**：
+- 将「大纲说明文案、平台选项、UploadedFile 解析（`getvalue` + `seek`）」收敛到 `outline_upload`，避免 Quant 与 Playtest Pipeline 两套实现分叉；
+- 明确产品口径：**仅**在需要题型/选项对齐的入口复用大纲能力，**不**向其他工具全站铺开。
+
+**验证结果**：
+- `python -c "from survey_tools.web.outline_upload import parse_uploaded_outline_file"` 导入通过。
+
 ---
 
 ## 📅 2026-03-23

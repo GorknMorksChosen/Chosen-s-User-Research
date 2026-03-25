@@ -8,7 +8,7 @@ import streamlit as st
 
 from scripts.run_playtest_pipeline import run_pipeline
 from survey_tools.utils.io import load_survey_data
-from survey_tools.utils.outline_parser import parse_outline_for_platform
+from survey_tools.web.outline_upload import OUTLINE_PLATFORM_OPTIONS, parse_uploaded_outline_file
 
 
 def _load_uploaded_df(uploaded_file, sheet_name: int | str = 0) -> pd.DataFrame:
@@ -23,18 +23,6 @@ def _get_excel_sheet_names(uploaded_file) -> list[str]:
     if hasattr(uploaded_file, "seek"):
         uploaded_file.seek(0)
     return names
-
-
-def _parse_uploaded_outline(outline_file, platform: str) -> dict[int, dict]:
-    data = outline_file.read()
-    parsed = parse_outline_for_platform(
-        data=data,
-        filename=str(outline_file.name),
-        platform="wjx" if platform == "问卷星" else "tencent",
-    )
-    if hasattr(outline_file, "seek"):
-        outline_file.seek(0)
-    return parsed
 
 
 def main() -> None:
@@ -53,7 +41,7 @@ def main() -> None:
     )
     outline_source = st.selectbox(
         "大纲来源",
-        options=["问卷星", "腾讯问卷"],
+        options=OUTLINE_PLATFORM_OPTIONS,
         index=0,
         help="按来源选择解析规则（与扩展名解耦）。",
     )
@@ -85,7 +73,7 @@ def main() -> None:
 
     if outline_file is not None:
         try:
-            parsed_outline = _parse_uploaded_outline(outline_file, outline_source)
+            parsed_outline = parse_uploaded_outline_file(outline_file, outline_source)
             st.info(f"已解析问卷大纲：{len(parsed_outline)} 道题（来源：{outline_source}）")
         except Exception as exc:
             st.warning(f"大纲解析失败，已回退为自动识别：{exc}")

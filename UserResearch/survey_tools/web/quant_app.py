@@ -29,6 +29,13 @@ from survey_tools.core.question_type import (
 )
 from survey_tools.core.effect_size import interpret_effect_size
 from survey_tools.core.quant import build_question_specs, run_quant_cross_engine
+from survey_tools.web.outline_upload import (
+    OUTLINE_CAPTION,
+    OUTLINE_PLATFORM_OPTIONS,
+    outline_raw_to_quant_type_map,
+    parse_uploaded_outline_file,
+)
+
 
 def init_session_state():
     if "df" not in st.session_state:
@@ -473,11 +480,7 @@ def main():
 
         # 可选：问卷大纲上传（用于提升题型识别，与 Pipeline 共享解析逻辑）
         with st.expander("问卷大纲（可选，用于提升题型识别）"):
-            st.caption(
-                "解析方式由「大纲来源」决定，与扩展名无关；"
-                "问卷星大纲请选「问卷星」并上传 .docx；"
-                "腾讯大纲可选 .txt 或 .docx，并选「腾讯问卷」。"
-            )
+            st.caption(OUTLINE_CAPTION)
             col_out_u, col_out_s = st.columns([2, 1])
             with col_out_u:
                 outline_upload = st.file_uploader(
@@ -488,24 +491,19 @@ def main():
             with col_out_s:
                 outline_platform_label = st.selectbox(
                     "大纲来源",
-                    ["问卷星", "腾讯问卷"],
+                    OUTLINE_PLATFORM_OPTIONS,
                     key="outline_platform_select",
                     help="选择与您导出大纲一致的平台，以使用对应解析规则。",
                 )
-            platform_code = "wjx" if outline_platform_label == "问卷星" else "tencent"
 
             if outline_upload:
                 try:
-                    from survey_tools.utils.outline_parser import (
-                        outline_to_q_num_type,
-                        parse_outline_for_platform,
+                    outline = parse_uploaded_outline_file(
+                        outline_upload, outline_platform_label
                     )
-                    outline_upload.seek(0)
-                    raw = outline_upload.getvalue()
-                    outline = parse_outline_for_platform(
-                        raw, outline_upload.name, platform_code
+                    st.session_state.outline_q_num_to_type = outline_raw_to_quant_type_map(
+                        outline
                     )
-                    st.session_state.outline_q_num_to_type = outline_to_q_num_type(outline)
                     st.session_state.column_type_df = None  # 强制重建题型表以应用大纲
                     st.success(
                         f"已解析大纲：{outline_upload.name}（{outline_platform_label}），"
