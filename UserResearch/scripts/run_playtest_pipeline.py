@@ -27,7 +27,7 @@ Playtest 自动化分析流水线 v0.3
   6. （可选）显著性检验收口到 quant 引擎：评分题(k=2) Welch t、评分题(k>2) ANOVA/KW；单/多选卡方。
 
 CLI 参数摘要：
-  --data-dir, --output-dir, --segment-col, --per-question-sheets, --outline,
+  --data-dir, --output-dir, --segment-col, --sheet-name, --per-question-sheets, --outline,
   --sig-test / --no-sig-test, --sig-alpha
   详见 docs/PLAYTEST_PIPELINE.md 或 --help。
 
@@ -120,6 +120,9 @@ _SEGMENT_KEYWORDS = [
 ]
 _SATISFY_KEYWORDS = [
     "总体满意", "满意度", "nps", "综合评分", "整体评分", "总满意", "总评", "overall",
+]
+_NPS_KEYWORDS = [
+    "nps", "净推荐", "推荐意愿", "推荐可能性", "推荐概率", "recommend",
 ]
 _FORCE_IGNORE_KEYWORDS = [
     "答卷时间", "ip", "所用时间", "序号", "总分", "答卷编号", "逻辑", "跳转",
@@ -216,7 +219,10 @@ def _infer_matrix_groups(columns: List[str]) -> Dict[str, int]:
 # ---------------------------------------------------------------------------
 # Step 1：数据装载
 # ---------------------------------------------------------------------------
-def _load_data(data_dir: str) -> Tuple[pd.DataFrame, Optional[Any]]:
+def _load_data(
+    data_dir: str,
+    sheet_name: Optional[int | str] = 0,
+) -> Tuple[pd.DataFrame, Optional[Any]]:
     """读取最新问卷数据，同时返回 .sav 的原始 meta 对象。
 
     Args:
@@ -242,7 +248,9 @@ def _load_data(data_dir: str) -> Tuple[pd.DataFrame, Optional[Any]]:
         except Exception as _e:
             print(f"     （meta 加载失败，将跳过 meta 增强识别：{_e}）")
 
-    df = load_survey_data(path)
+    df = load_survey_data(path, sheet_name=sheet_name if sheet_name is not None else 0)
+    if str(path).lower().endswith((".xlsx", ".xls")) and sheet_name is not None:
+        print(f"  → Excel 读取 Sheet：{sheet_name}")
     print(f"  → 成功读取数据，样本量：{len(df)}，列数：{len(df.columns)}")
     return df, sav_meta
 
@@ -710,11 +718,89 @@ def _build_question_block(
         row[col0] = label
         return pd.DataFrame([row])
 
-    # 计算均值（仅当选项含数字分值时）
+    def _is_nps_question(question_text: str, data: pd.DataFrame) -> bool:
+        q = str(question_text).strip().lower()
+        has_nps_keyword = any(k in q for k in _NPS_KEYWORDS)
+        # 兼容常见中文问法：同时出现“推荐”与“意愿/可能/多大”
+        has_cn_pattern = ("推荐" in q) and any(k in q for k in ("意愿", "可能", "多大"))
+        if not (has_nps_keyword or has_cn_pattern):
+            return False
+        opt_vals = [_extract_option_value(str(opt)) for opt in data.get("选项", pd.Series(dtype=object)).unique()]
+        numeric_vals = [v for v in opt_vals if v is not None]
+        if not numeric_vals:
+            return False
+        return min(numeric_vals) >= 0 and max(numeric_vals) <= 10
+
+    def _calc_nps_rows(data: pd.DataFrame) -> List[pd.DataFrame]:
+        rows: List[pd.DataFrame] = []
+        if data.empty:
+            return rows
+
+        by_opt = data.groupby("选项")["频次"].sum()
+        to_score = {
+            opt: _extract_option_value(str(opt))
+            for opt in by_opt.index
+        }
+
+        promoter_opts = [opt for opt, v in to_score.items() if v is not None and v >= 9]
+        passive_opts = [opt for opt, v in to_score.items() if v is not None and 7 <= v <= 8]
+        detractor_opts = [opt for opt, v in to_score.items() if v is not None and v <= 6]
+
+        grp_n_local = data.groupby("核心分组")["组样本数"].first()
+        total_n_local = int(grp_n_local.sum())
+
+        def _rate_for(opts: List[Any]) -> tuple[float, Dict[str, float]]:
+            total_cnt = int(data["频次"].sum())
+            overall_rate = (data[data["选项"].isin(opts)]["频次"].sum() / total_cnt) if total_cnt > 0 else 0.0
+            per_group_rate: Dict[str, float] = {}
+            for grp in data["核心分组"].dropna().unique():
+                gdf = data[data["核心分组"] == grp]
+                g_n = int(gdf["组样本数"].iloc[0]) if not gdf.empty else 0
+                g_cnt = int(gdf[gdf["选项"].isin(opts)]["频次"].sum())
+                per_group_rate[str(grp)] = (g_cnt / g_n) if g_n > 0 else 0.0
+            return overall_rate, per_group_rate
+
+        promoter_overall, promoter_grp = _rate_for(promoter_opts)
+        passive_overall, passive_grp = _rate_for(passive_opts)
+        detractor_overall, detractor_grp = _rate_for(detractor_opts)
+
+        def _fill_pct_row(label: str, overall: float, grp_map: Dict[str, float]) -> pd.DataFrame:
+            r = _make_row(label)
+            for j, c in enumerate(pivot_df.columns):
+                if c == "选项":
+                    continue
+                if c == "总体%":
+                    r.iloc[0, j] = f"{overall:.1%}"
+                elif c in grp_map:
+                    r.iloc[0, j] = f"{grp_map[c]:.1%}"
+            return r
+
+        rows.append(_fill_pct_row("Promoter占比（9-10）", promoter_overall, promoter_grp))
+        rows.append(_fill_pct_row("Passive占比（7-8）", passive_overall, passive_grp))
+        rows.append(_fill_pct_row("Detractor占比（0-6）", detractor_overall, detractor_grp))
+
+        nps_row = _make_row("NPS（%Promoter-%Detractor）")
+        for j, c in enumerate(pivot_df.columns):
+            if c == "选项":
+                continue
+            if c == "总体%":
+                nps_row.iloc[0, j] = f"{(promoter_overall - detractor_overall) * 100:.1f}"
+            elif c in promoter_grp and c in detractor_grp:
+                nps_row.iloc[0, j] = f"{(promoter_grp[c] - detractor_grp[c]) * 100:.1f}"
+            elif c == "人数N":
+                nps_row.iloc[0, j] = total_n_local
+            elif c in grp_n_local.index:
+                nps_row.iloc[0, j] = int(grp_n_local[c])
+        rows.append(nps_row)
+        return rows
+
+    is_nps = q_type in ("单选", "评分") and _is_nps_question(question, df_q)
+
+    # 计算均值（仅当选项含数字分值时；NPS 题不输出均值，避免与国际口径混淆）
     mean_val: Optional[float] = None
     group_means: Dict[str, float] = {}
     n_valid = 0
-    if q_type in ("单选", "评分") and not df_q.empty:
+    if q_type in ("单选", "评分") and not df_q.empty and not is_nps:
         try:
             total_counts = df_q.groupby("选项")["频次"].sum()
             opt_vals = {opt: _extract_option_value(str(opt)) for opt in total_counts.index}
@@ -767,7 +853,7 @@ def _build_question_block(
 
     # T2B/B2B 行（仅 5 点量表：选项可解析出 4、5 分）
     t2b_b2b_rows: List[pd.DataFrame] = []
-    if q_type in ("单选", "评分") and not df_q.empty:
+    if q_type in ("单选", "评分") and not df_q.empty and not is_nps:
         opt_vals = {}
         for opt in df_q["选项"].unique():
             v = _extract_option_value(str(opt))
@@ -818,6 +904,11 @@ def _build_question_block(
                         b2b_row.iloc[0, j] = f"{b2b_grp[col]:.1%}"
                 t2b_b2b_rows.append(b2b_row)
 
+    # NPS 国际口径：NPS = %Promoter(9-10) - %Detractor(0-6)
+    nps_rows: List[pd.DataFrame] = []
+    if is_nps:
+        nps_rows = _calc_nps_rows(df_q)
+
     # 拼装 block：题目标题 → [均值] → Banner N → 列头 → 数据 → [T2B/B2B] → 空行
     parts: List[pd.DataFrame] = [
         _make_row(f"【{question}】（{q_type}）"),
@@ -838,6 +929,7 @@ def _build_question_block(
     parts.append(header_row)
     parts.append(pivot_df)
     parts.extend(t2b_b2b_rows)
+    parts.extend(nps_rows)
     parts.append(_make_row(""))
 
     return pd.concat(parts, ignore_index=True)
@@ -1937,6 +2029,11 @@ def run_pipeline(
     type=float,
     help="显著性阈值 alpha（满足 p-value < alpha 视为显著）。",
 )
+@click.option(
+    "--sheet-name",
+    default=None,
+    help="Excel 读取的 Sheet（支持索引如 0，或名称如 Sheet1）。仅对 .xlsx/.xls 生效。",
+)
 def main(
     data_dir: str,
     output_dir: str,
@@ -1945,6 +2042,7 @@ def main(
     outline: Optional[str],
     sig_test: bool,
     sig_alpha: float,
+    sheet_name: Optional[str],
 ) -> None:
     """Playtest 自动化分析流水线 v0.3。
 
@@ -1958,8 +2056,12 @@ def main(
     parsed_outline = load_parsed_outline(data_dir=data_dir, outline=outline)
 
     # Step 1：数据装载
+    parsed_sheet_name: Optional[int | str] = 0
+    if sheet_name is not None and str(sheet_name).strip() != "":
+        raw_sheet = str(sheet_name).strip()
+        parsed_sheet_name = int(raw_sheet) if re.fullmatch(r"-?\d+", raw_sheet) else raw_sheet
     try:
-        df, sav_meta = _load_data(data_dir)
+        df, sav_meta = _load_data(data_dir, sheet_name=parsed_sheet_name)
     except FileNotFoundError as e:
         print(f"\n✗ {e}")
         sys.exit(1)

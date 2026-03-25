@@ -6,7 +6,40 @@
 
 ---
 
-## 📅 2026-03-23（最新）
+## 📅 2026-03-25（最新）
+
+### Playtest Pipeline：Web 大纲上传 + Excel Sheet 选择 + NPS 国际公式落地
+
+**涉及文件**：
+- `survey_tools/web/pipeline_app.py`
+- `scripts/run_playtest_pipeline.py`
+- `docs/PLAYTEST_PIPELINE.md`
+
+**变更内容**：
+- **Web 入口增强**：
+  - 一键 Pipeline 页面新增「上传问卷大纲（.docx/.txt）」与「大纲来源（问卷星/腾讯）」；
+  - 上传 `.xlsx/.xls` 时新增「Sheet 选择」下拉，读取指定 Sheet 进行分析；
+  - 大纲解析成功后将结果传入 `run_pipeline(outline=...)`，解析失败自动回退到纯自动识别，不阻断流程。
+- **CLI 参数增强**：
+  - 新增 `--sheet-name`（支持索引或名称），用于 Excel 指定 Sheet 读取；
+  - `--help` 与文档参数表同步更新。
+- **NPS 统计口径升级（国际公式）**：
+  - 对符合 NPS 条件的题目，按 **Promoter(9-10) / Passive(7-8) / Detractor(0-6)** 分档；
+  - 输出 **`NPS = %Promoter - %Detractor`**；
+  - NPS 题不再输出「本题平均分」，避免与 NPS 口径混淆；
+  - 增强中文题干识别（如“推荐 + 意愿/可能/多大”）。
+
+**验证结果**：
+- `python scripts/run_playtest_pipeline.py --help` 通过，`--sheet-name` 已生效。
+- 用户实测样例（Boss 跑测问卷）完成验证：  
+  - 数据：`349836741_按分数_【代号SUN-0209跑测】boss战斗问卷_18_18.xlsx`  
+  - 大纲：`【代号SUN-0209跑测】boss战斗问卷.docx`  
+  - 产物：`20260324_Playtest自动化分析报告 (3).xlsx`  
+  - 结论：第 3 题按 NPS 口径输出，不再显示平均分。
+
+---
+
+## 📅 2026-03-23
 
 ### P0-A 首批落地 + 最小 pytest 门禁
 

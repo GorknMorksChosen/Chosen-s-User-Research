@@ -46,6 +46,7 @@
 3. 尝试满意度多元回归（需识别到满意度类目标列且评分特征≥2；`GameExperienceAnalyzer` 内有效行 &lt; 10 仍会失败）。  
 4. 导出多 Sheet Excel 报告。  
 5. （可选）对可解析数值分值的单选/评分题做组间均值 **Welch 独立样本 t 检验**，在汇总表中为显著组别均值标红（见下文）。
+6. 对识别为 NPS 的题目（题干含 `NPS/净推荐/推荐意愿/recommend` 且选项可解析为 `0-10`），在汇总表追加：Promoter/Passive/Detractor 占比与 **NPS = %Promoter - %Detractor**（其中 Promoter=9-10，Passive=7-8，Detractor=0-6）。
 
 ### 满意度回归与样本量分档（总样本量 `N = len(df)`）
 
@@ -66,6 +67,7 @@
 | `--data-dir` | 原始问卷目录 | `data/raw` |
 | `--output-dir` | 报告输出目录 | `data/processed` |
 | `--segment-col` | 分组列名**子串**模糊匹配；缺省自动识别；找不到则用「总体」 | 无 |
+| `--sheet-name` | Excel 读取的 Sheet（支持索引如 `0`，或名称如 `Sheet1`）；仅对 `.xlsx/.xls` 生效 | 无（默认第 0 张） |
 | `--per-question-sheets` | 除汇总外，为每题单独建 Sheet（上限 60） | 关闭 |
 | `--outline` | 问卷大纲路径（`.docx` 问卷星 / `.txt` 腾讯）；不指定则在 `data-dir` 下自动找最新 `.docx` 或 `.txt` | 无 |
 | `--sig-test` / `--no-sig-test` | 是否启用 quant 统一显著性检验并在 Excel 打标（`*` + 颜色） | 开启（`--sig-test`） |
@@ -75,6 +77,13 @@
 
 ```bash
 python scripts/run_playtest_pipeline.py --help
+```
+
+示例：
+
+```bash
+python scripts/run_playtest_pipeline.py --sheet-name 0
+python scripts/run_playtest_pipeline.py --sheet-name "Sheet1"
 ```
 
 ---

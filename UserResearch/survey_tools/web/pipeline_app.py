@@ -8,12 +8,33 @@ import streamlit as st
 
 from scripts.run_playtest_pipeline import run_pipeline
 from survey_tools.utils.io import load_survey_data
+from survey_tools.utils.outline_parser import parse_outline_for_platform
 
 
-def _load_uploaded_df(uploaded_file) -> pd.DataFrame:
-    df = load_survey_data(uploaded_file)
+def _load_uploaded_df(uploaded_file, sheet_name: int | str = 0) -> pd.DataFrame:
+    df = load_survey_data(uploaded_file, sheet_name=sheet_name)
     df.columns = [str(c).strip() for c in df.columns]
     return df
+
+
+def _get_excel_sheet_names(uploaded_file) -> list[str]:
+    xls = pd.ExcelFile(uploaded_file)
+    names = [str(s) for s in xls.sheet_names]
+    if hasattr(uploaded_file, "seek"):
+        uploaded_file.seek(0)
+    return names
+
+
+def _parse_uploaded_outline(outline_file, platform: str) -> dict[int, dict]:
+    data = outline_file.read()
+    parsed = parse_outline_for_platform(
+        data=data,
+        filename=str(outline_file.name),
+        platform="wjx" if platform == "问卷星" else "tencent",
+    )
+    if hasattr(outline_file, "seek"):
+        outline_file.seek(0)
+    return parsed
 
 
 def main() -> None:
@@ -25,12 +46,33 @@ def main() -> None:
         "上传问卷文件（.sav / .csv / .xlsx）",
         type=["sav", "csv", "xlsx"],
     )
+    outline_file = st.file_uploader(
+        "上传问卷大纲（可选，.docx / .txt）",
+        type=["docx", "txt"],
+        help="上传后可增强题型识别、补全 0% 选项与排序；不上传则仅使用自动识别。",
+    )
+    outline_source = st.selectbox(
+        "大纲来源",
+        options=["问卷星", "腾讯问卷"],
+        index=0,
+        help="按来源选择解析规则（与扩展名解耦）。",
+    )
 
     df: Optional[pd.DataFrame] = None
+    parsed_outline: Optional[dict[int, dict]] = None
+    selected_sheet: int | str = 0
     load_error: Optional[Exception] = None
     if uploaded_file is not None:
         try:
-            df = _load_uploaded_df(uploaded_file)
+            if str(uploaded_file.name).lower().endswith((".xlsx", ".xls")):
+                sheet_names = _get_excel_sheet_names(uploaded_file)
+                selected_sheet = st.selectbox(
+                    "选择要分析的 Sheet",
+                    options=sheet_names,
+                    index=0,
+                    help="仅对 Excel 文件显示；CSV/SAV 无需选择 Sheet。",
+                )
+            df = _load_uploaded_df(uploaded_file, sheet_name=selected_sheet)
             st.info(f"已加载数据：样本量 {len(df)}，列数 {len(df.columns)}")
         except (ValueError, UnicodeDecodeError, pd.errors.ParserError) as exc:
             load_error = exc
@@ -40,6 +82,14 @@ def main() -> None:
             load_error = exc
             st.error("读取文件时发生系统异常，请稍后重试或联系维护同事。")
             st.exception(exc)
+
+    if outline_file is not None:
+        try:
+            parsed_outline = _parse_uploaded_outline(outline_file, outline_source)
+            st.info(f"已解析问卷大纲：{len(parsed_outline)} 道题（来源：{outline_source}）")
+        except Exception as exc:
+            st.warning(f"大纲解析失败，已回退为自动识别：{exc}")
+            parsed_outline = None
 
     with st.expander("高级配置", expanded=True):
         segment_options = ["自动推断"]
@@ -84,6 +134,7 @@ def main() -> None:
                 output_dir=output_dir,
                 segment_col=segment_col,
                 per_question_sheets=per_question_sheets,
+                outline=parsed_outline,
                 sig_test=sig_test,
                 sig_alpha=float(sig_alpha),
             )
