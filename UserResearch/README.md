@@ -76,6 +76,7 @@ streamlit run satisfaction_engine.py
 *   **近期关键修复（2026-03-18 第一轮）**：忽略列在新增组合分组列后保持不被重置；`.sav` 应用变量标签导致单选/评分不含 Q 题号时仍能按 UI 勾选列统计；生成组合分组列后核心分组不再回退 `None`；结果按题号 Q1/Q2/Q3… 排序。
 *   **全盘 Review 修复（2026-03-18 第二轮）**：对全项目做系统性 review，产出 `docs/REVIEW_2026-03-18.md`（含 9 高风险/12 中风险/14 低优先级条目），并在同轮全部修复。核心修复包括：排序题 Top1/Top2 率分母错误、P 值/效应量列死代码激活、0/1 多选列误判评分、IPA 四象限标签负值倒置、ExcelFile 对象传入必然崩溃、SAV 标签列名碰撞、聚类行数对齐校验；质量矩阵三个脚本假阳性修复；共 27 处修改，`tests/auto_verify_v1.py` 全部断言通过。详见 `docs/DEV_LOG.md` 和 `docs/REVIEW_2026-03-18.md`。
 *   **可选问卷大纲（2026-03-20）**：Web 定量页（`survey_tools/web/quant_app.py`）支持上传 `.docx` / `.txt` 大纲；**「大纲来源」** 下拉选择「问卷星」或「腾讯问卷」决定解析规则（与扩展名解耦）。成功解析后覆盖题型识别；不上传则仍为题干关键词自动识别 + 题型微调。解析实现与 Pipeline 共用 `survey_tools/utils/outline_parser.py`，详见 `docs/DEV_LOG.md`。
+*   **导出与 Playtest 对齐（2026-03-25）**：定量页主下载为与 Playtest CLI 相同 openpyxl 版式（样本概况、交叉汇总含均值行与显著性样式等）；需从 `UserResearch/` 目录启动 Streamlit。详见 `docs/DEV_LOG.md`。
 
 ### 模块二：满意度与体验建模 (Standard)
 *   **入口脚本**：`satisfaction_engine.py`
@@ -250,6 +251,7 @@ UserResearch/  （工作目录）
 最新执行计划（可信度优先，任务路线图版，含优先级任务清单/DoD/风险预案）见：`docs/PROJECT_PLAN_V2_20260323.md`。  
 2026-03-23 微调：已将“性能与内存治理（P1-C）”“深度数据契约与强类型重构（P1-B）”“混沌测试与故事化 Mock 引擎（P1-D）”“带游戏上下文元数据的基线库（P2-A）”“文本分析接入 Pipeline（G4）”纳入同一执行路线。
 2026-03-23 执行进展：已落地 P0-A 首批修复（矩阵评分检验路由、小样本正态策略、多选 0/0.0 提及编码、Quant 显著性 `alpha` 三层统一），并新增最小 `pytest` 门禁样例 `tests/test_quant_core_pytest.py`（4 项通过）。
+2026-03-27 全量 review 进展：已完成本轮 Workspace 代码审阅与回归验证（`pytest` + 质量矩阵），当前结果为 `tests/test_quant_core_pytest.py` 6 项通过、`tests/run_quality_matrix.py` 10/10 通过；细节见 `docs/DEV_LOG.md` 最新条目。
 
 **轻量治理约定（当前执行）**：以“低维护成本 + 高可追溯”为目标，默认采用每周最小文档更新机制：  
 - 每周更新 `README.md`：当前能力口径、关键风险、下一步重点；  

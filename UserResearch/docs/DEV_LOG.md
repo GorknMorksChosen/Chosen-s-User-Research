@@ -6,7 +6,79 @@
 
 ---
 
+## 📅 2026-03-27（最新）
+
+### 全量 Workspace Review（代码+测试+文档对齐）与发布前同步
+
+**涉及文件**：
+- `survey_tools/core/pipeline_report_blocks.py`
+- `survey_tools/core/survey_metadata_columns.py`
+- `scripts/run_playtest_pipeline.py`
+- `survey_tools/web/quant_app.py`
+- `tests/test_quant_core_pytest.py`
+- `README.md`
+- `docs/PROJECT_PLAN_V2_20260323.md`
+- `docs/DEV_LOG.md`
+
+**本轮审阅范围**：
+- 对本轮已修改/新增核心代码做逐文件审阅，重点覆盖：  
+  - Quant 与 Pipeline 导出口径复用是否一致；  
+  - 元数据列忽略规则是否已从“脚本内联”收敛为共享模块；  
+  - NPS/T2B/均值与显著性导出逻辑是否存在明显回归风险；  
+  - Web 端题型重建与 Pipeline 自动识别口径是否对齐。
+
+**验证结果（可复现命令）**：
+- `python -m pytest UserResearch/tests/test_quant_core_pytest.py -q` -> `6 passed`
+- `python UserResearch/tests/run_quality_matrix.py` -> `10/10 通过`
+
+**结论**：
+- 本轮改动在当前测试矩阵下未发现阻断发布的问题；  
+- Quant 与 Pipeline 在导出主链路上已完成“同版式复用”收敛；  
+- 元数据列忽略规则已形成单一事实源（`survey_tools/core/survey_metadata_columns.py`），降低后续口径漂移风险。
+
+**遗留风险（非阻断）**：
+- 在 Windows PowerShell 环境下，质量矩阵中文日志仍可能出现编码显示异常（乱码），当前不影响脚本通过/失败判定，但会影响可读性；建议后续在测试入口统一控制台编码输出策略。
+
+---
+
 ## 📅 2026-03-25（最新）
+
+### Quant 导出对齐 Playtest：报告块抽离 + 同版式 Excel 下载
+
+**涉及文件**：
+- `survey_tools/core/pipeline_report_blocks.py`（新增：`extract_option_value`、`simple_pivot`、`build_question_block`，从 `run_playtest_pipeline` 抽出）
+- `scripts/run_playtest_pipeline.py`（改为 import 上述函数；`_export_results` 支持 `excel_bytes_io` 内存写出、`summary_profile=quant` 样本概况文案；新增 `export_quant_cross_analysis_xlsx_bytes` 供 Web）
+- `survey_tools/web/quant_app.py`（主按钮「导出 Playtest 同版式 Excel」；可选每题独立 Sheet；保留「简易透视」纯表导出）
+
+**变更内容**：
+- 非矩阵题导出块与 Pipeline 共用 `build_question_block`（含本题平均分、样本量行、T2B/NPS 等）。
+- 矩阵题仍走原 `_export_results` 内 2D 表与条件格式（与 CLI 一致）。
+- 定量工具样本概况 Sheet 含「分析方式：手动选择分析列（题型可微调）」等字段，与 Playtest 区分。
+- 需从 `UserResearch/` 目录启动 streamlit，否则 `scripts.run_playtest_pipeline` 可能无法导入。
+
+### Quant / Pipeline：元数据列自动识别为「忽略」（与 Pipeline 同规则）
+
+**涉及文件**：
+- `survey_tools/core/survey_metadata_columns.py`（新增：`METADATA_IGNORE_KEYWORDS`、`is_metadata_column`）
+- `survey_tools/web/quant_app.py`（题型重建时列名命中元数据则 `final_type=忽略`，优先于题号推断与大纲覆盖；题型微调仍可改）
+- `scripts/run_playtest_pipeline.py`（原 `_FORCE_IGNORE_KEYWORDS` 内联逻辑改为调用 `is_metadata_column`）
+- `tests/test_quant_core_pytest.py`（`test_metadata_column_keywords_align_with_pipeline`）
+
+**变更内容**：
+- 序号、答卷时间、所用时间、IP、总分、答卷编号、逻辑/跳转等（子串匹配，列名归一化与 Pipeline 一致）在**定量工具自动识别**中默认为「忽略」，避免与 Playtest 行为不一致。
+- **产品口径**：非强制锁定；用户可在「题型微调」中改回其他题型。
+
+### Quant：问卷大纲与题型重建（手动覆盖 / 解析失败 / 题号对齐）
+
+**涉及文件**：
+- `survey_tools/web/quant_app.py`
+
+**变更内容**：
+- 大纲解析**成功**：强制重建题型表，并设置 `outline_skip_manual_merge`，本轮**不合并**旧 `column_type_df` 中的「题型」，避免手动微调挡住大纲；成功文案旁说明可在「题型微调」中再改。
+- 大纲解析**失败**（`ValueError` / 其它异常）：清空 `outline_q_num_to_type`，并将 `column_type_df = None`，避免静默沿用「误以为仍带大纲」的旧表。
+- 用户**移除大纲文件**：清空映射并 `column_type_df = None`，重建以去掉大纲覆盖（仍保留列变化时的常规手动合并逻辑）。
+- 重建后若存在大纲映射：对比大纲题号与数据列 `extract_qnum` 题号，对「仅在大纲中 / 仅在数据中」的题号给出 `st.info` / `st.caption` 提示。
+- 解析成功但 `outline_raw_to_quant_type_map` 为空时 `st.warning`，便于发现格式或平台选错。
 
 ### Quant：NPS 题型（自动识别 + 手动微调 + 引擎贯通）
 

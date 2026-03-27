@@ -20,6 +20,13 @@ from survey_tools.core.quant import (
     run_within_group_matrix_rating,
     make_safe_sheet_name,
 )
+from survey_tools.core.survey_metadata_columns import is_metadata_column
+
+# Playtest 同版式 Excel（脚本入口；需从 UserResearch 根目录运行 streamlit）
+try:
+    from scripts.run_playtest_pipeline import export_quant_cross_analysis_xlsx_bytes
+except ImportError:
+    export_quant_cross_analysis_xlsx_bytes = None  # type: ignore[misc, assignment]
 from survey_tools.core.question_type import (
     get_prefix,
     detect_column_type,
@@ -66,6 +73,8 @@ def init_session_state():
         st.session_state.combined_group_recipes = []
     if "outline_q_num_to_type" not in st.session_state:
         st.session_state.outline_q_num_to_type = None  # 可选大纲解析后的题号→题型映射
+    if "outline_skip_manual_merge" not in st.session_state:
+        st.session_state.outline_skip_manual_merge = False  # 大纲成功解析后下一轮重建不合并旧「题型」
 
 
 def debug_log(message: str) -> None:
@@ -502,23 +511,36 @@ def main():
                     outline = parse_uploaded_outline_file(
                         outline_upload, outline_platform_label
                     )
-                    st.session_state.outline_q_num_to_type = outline_raw_to_quant_type_map(
-                        outline
-                    )
+                    mapped = outline_raw_to_quant_type_map(outline)
+                    st.session_state.outline_q_num_to_type = mapped
                     st.session_state.column_type_df = None  # 强制重建题型表以应用大纲
+                    # 本次重建不沿用旧表中的「题型」列，避免手动微调覆盖大纲结果
+                    st.session_state.outline_skip_manual_merge = True
                     st.success(
                         f"已解析大纲：{outline_upload.name}（{outline_platform_label}），"
                         f"共 {len(outline)} 道题"
                     )
+                    if not mapped:
+                        st.warning(
+                            "大纲已解析，但未得到任何「题号→题型」映射；请检查大纲格式或「大纲来源」是否与导出平台一致。"
+                        )
+                    else:
+                        st.caption(
+                            "已用大纲覆盖题号级题型；若你曾手动改过题型，本次已按大纲重算。"
+                            "之后可在「题型微调」中再次调整。"
+                        )
                 except ValueError as e:
                     st.warning(str(e))
                     st.session_state.outline_q_num_to_type = None
+                    st.session_state.column_type_df = None  # 避免静默沿用「以为已带大纲」的旧表
                 except Exception as e:
                     st.error(f"大纲解析失败：{e}")
                     st.session_state.outline_q_num_to_type = None
+                    st.session_state.column_type_df = None
             else:
                 if st.session_state.outline_q_num_to_type is not None:
                     st.caption("已清除大纲，将使用自动识别 + 手动调整")
+                    st.session_state.column_type_df = None  # 去掉大纲覆盖，重建题型表
                 st.session_state.outline_q_num_to_type = None
 
         # 自动识别题型 (Logic from question_type.py)
@@ -528,6 +550,7 @@ def main():
         # 进而导致“已忽略的子列仍被统计”的问题。
         #
         # 因此这里改为：当列集合变化时，**增量合并**新列的自动识别结果，保留旧列的「题型」。
+        # 例外：大纲刚成功解析时 outline_skip_manual_merge=True，本轮不合并旧「题型」，以免覆盖大纲。
         if (
             st.session_state.column_type_df is None
             or set(st.session_state.column_type_df["列名"]) != set(columns)
@@ -553,8 +576,14 @@ def main():
             from collections import defaultdict
             q_idx_in_question = defaultdict(int)  # 每题内列的下标，用于同名「其他」时区分前后列
             prev_type_df = st.session_state.column_type_df
-            prev_type_map = {}
-            if prev_type_df is not None and "列名" in prev_type_df.columns and "题型" in prev_type_df.columns:
+            prev_type_map: dict = {}
+            skip_manual = st.session_state.pop("outline_skip_manual_merge", False)
+            if (
+                not skip_manual
+                and prev_type_df is not None
+                and "列名" in prev_type_df.columns
+                and "题型" in prev_type_df.columns
+            ):
                 try:
                     prev_type_map = dict(zip(prev_type_df["列名"].astype(str), prev_type_df["题型"]))
                 except Exception:
@@ -583,60 +612,71 @@ def main():
                 if q_num is not None:
                     q_idx_in_question[q_num] += 1
 
-                final_type = "单选" # Default fallback
-
-                if q_num is not None and q_num in q_num_to_type:
-                    v13_type = q_num_to_type[q_num]
-                    # 兼容 infer_type_from_columns 的长格式与 outline 的短格式
-                    if v13_type in ("多选题", "多选"): final_type = "多选"
-                    elif v13_type in ("单选题", "单选"): final_type = "单选"
-                    elif v13_type in ("NPS题", "NPS"): final_type = "NPS"
-                    elif v13_type in ("评分题", "评分"): final_type = "评分"
-                    elif v13_type in ("矩阵单选题", "矩阵"): final_type = "矩阵"
-                    elif v13_type in ("矩阵评分题", "矩阵评分"): final_type = "矩阵"
-                    elif v13_type in ("填空题", "忽略"): final_type = "忽略"
-
-                # 附属文本列：仅当与前一列紧挨且同名（或同基名含「其他」）时，后一列标为忽略
-                if is_companion_text_column(str(c), [str(x) for x in all_cols], idx_in_q):
+                # 元数据列（序号、答卷时间等）：默认「忽略」，优先于题号推断与大纲覆盖；题型微调仍可改
+                if is_metadata_column(str(c)):
                     final_type = "忽略"
+                else:
+                    final_type = "单选"  # Default fallback
 
-                # If still default, try old logic as backup
-                if final_type == "单选":
-                     c_str = str(c)
-                     if (
-                         "Type_" in c_str
-                         or c_str.strip().lower().startswith("type.")
-                         or "其他" in c_str
-                         or "填空" in c_str
-                         or "建议" in c_str
-                     ):
-                         final_type = "忽略"
-                     elif "排序" in c_str:
-                         final_type = "排序"
-                     else:
-                        # 仅当未从题干推断为「单选题」时，才用数值启发式覆盖为评分
-                        from_inferred_single = (
-                            q_num is not None
-                            and q_num in q_num_to_type
-                            and q_num_to_type[q_num] == "单选题"
-                        )
-                        if not from_inferred_single:
-                            numeric = pd.api.types.is_numeric_dtype(series)
-                            if numeric:
-                                uniq = series.dropna().unique()
-                                if len(uniq) > 0:
-                                    vmin = float(pd.Series(uniq).min())
-                                    vmax = float(pd.Series(uniq).max())
-                                    if len(uniq) <= 11 and 0 <= vmin and vmax <= 10:
-                                        final_type = (
-                                            "NPS"
-                                            if stem_text_suggests_nps(c_str)
-                                            else "评分"
-                                        )
+                    if q_num is not None and q_num in q_num_to_type:
+                        v13_type = q_num_to_type[q_num]
+                        # 兼容 infer_type_from_columns 的长格式与 outline 的短格式
+                        if v13_type in ("多选题", "多选"):
+                            final_type = "多选"
+                        elif v13_type in ("单选题", "单选"):
+                            final_type = "单选"
+                        elif v13_type in ("NPS题", "NPS"):
+                            final_type = "NPS"
+                        elif v13_type in ("评分题", "评分"):
+                            final_type = "评分"
+                        elif v13_type in ("矩阵单选题", "矩阵"):
+                            final_type = "矩阵"
+                        elif v13_type in ("矩阵评分题", "矩阵评分"):
+                            final_type = "矩阵"
+                        elif v13_type in ("填空题", "忽略"):
+                            final_type = "忽略"
 
-                # 组合分组列是“分析维度列”，默认不参与题目统计，避免污染题目列表
-                if str(c) in combined_names:
-                    final_type = "忽略"
+                    # 附属文本列：仅当与前一列紧挨且同名（或同基名含「其他」）时，后一列标为忽略
+                    if is_companion_text_column(str(c), [str(x) for x in all_cols], idx_in_q):
+                        final_type = "忽略"
+
+                    # If still default, try old logic as backup
+                    if final_type == "单选":
+                        c_str = str(c)
+                        if (
+                            "Type_" in c_str
+                            or c_str.strip().lower().startswith("type.")
+                            or "其他" in c_str
+                            or "填空" in c_str
+                            or "建议" in c_str
+                        ):
+                            final_type = "忽略"
+                        elif "排序" in c_str:
+                            final_type = "排序"
+                        else:
+                            # 仅当未从题干推断为「单选题」时，才用数值启发式覆盖为评分
+                            from_inferred_single = (
+                                q_num is not None
+                                and q_num in q_num_to_type
+                                and q_num_to_type[q_num] == "单选题"
+                            )
+                            if not from_inferred_single:
+                                numeric = pd.api.types.is_numeric_dtype(series)
+                                if numeric:
+                                    uniq = series.dropna().unique()
+                                    if len(uniq) > 0:
+                                        vmin = float(pd.Series(uniq).min())
+                                        vmax = float(pd.Series(uniq).max())
+                                        if len(uniq) <= 11 and 0 <= vmin and vmax <= 10:
+                                            final_type = (
+                                                "NPS"
+                                                if stem_text_suggests_nps(c_str)
+                                                else "评分"
+                                            )
+
+                    # 组合分组列是“分析维度列”，默认不参与题目统计，避免污染题目列表
+                    if str(c) in combined_names:
+                        final_type = "忽略"
 
                 # 保留用户之前手动修改过的题型（尤其是「忽略」）
                 manual_type = prev_type_map.get(str(c))
@@ -644,6 +684,32 @@ def main():
 
                 records.append({"列名": c, "自动类型": final_type, "题型": effective_type})
             st.session_state.column_type_df = pd.DataFrame(records)
+
+            # 大纲题号与数据列题号对齐提示（extract_qnum 可解析的题号）
+            outline_map_dbg = st.session_state.get("outline_q_num_to_type")
+            if outline_map_dbg:
+                from survey_tools.core.quant import extract_qnum as _exq
+
+                data_q_nums: set[int] = set()
+                for _c in columns:
+                    _qs = _exq(str(_c))
+                    if _qs and str(_qs).isdigit():
+                        data_q_nums.add(int(_qs))
+                only_in_outline = sorted(set(outline_map_dbg.keys()) - data_q_nums)
+                only_in_data = sorted(data_q_nums - set(outline_map_dbg.keys()))
+                if only_in_outline:
+                    st.info(
+                        "大纲中有以下题号在当前数据列名中**未匹配到**（列名需能被识别为题号，如 "
+                        "`3.` / `Q3.` 开头），大纲不会作用于这些题："
+                        f" {only_in_outline[:30]}"
+                        + (" …" if len(only_in_outline) > 30 else "")
+                    )
+                if only_in_data:
+                    st.caption(
+                        "数据中有以下题号未出现在大纲中，这些题仍按列名自动识别："
+                        f" {only_in_data[:30]}"
+                        + (" …" if len(only_in_data) > 30 else "")
+                    )
             
         st.subheader("题型微调")
         with st.form("type_editor_form"):
@@ -1070,7 +1136,40 @@ def main():
 
         st.divider()
         st.subheader("结果导出与量化统计摘要")
-        # 构建可导出 sheet：汇总 + 每题一 sheet（一工作簿多 sheet + 用户勾选）
+        st.caption(
+            "主下载：与 Playtest Pipeline 相同版式（样本概况、交叉分析汇总含本题平均分/样本量行、显著性格式等）。"
+            "下方「简易透视表」为页面展示用 pivot 的纯表导出，便于对照。"
+        )
+        export_per_q = st.checkbox(
+            "导出时每题独立 Sheet（与 Playtest --per-question-sheets 一致）",
+            value=False,
+            key="quant_export_per_question_sheets",
+        )
+        if st.button("导出 Playtest 同版式 Excel", type="primary"):
+            if export_quant_cross_analysis_xlsx_bytes is None:
+                st.error("无法加载导出模块（请从 UserResearch 目录启动 streamlit）。")
+            else:
+                try:
+                    core_seg = st.session_state.core_segment_col
+                    is_syn = core_seg == "_总体_"
+                    buf = export_quant_cross_analysis_xlsx_bytes(
+                        df,
+                        analysis_results,
+                        sig_test=True,
+                        segment_col=core_seg,
+                        is_synthetic=is_syn,
+                        per_question_sheets=export_per_q,
+                        outline=None,
+                    )
+                    st.session_state.export_cross_buffer = buf
+                    st.session_state.export_cross_name = "问卷定量交叉分析结果.xlsx"
+                    debug_log("导出 Playtest 同版式 Excel 成功")
+                    st.rerun()
+                except Exception as e:
+                    debug_log(f"导出 Excel 失败 | error={repr(e)}")
+                    st.error(f"导出失败: {e}")
+
+        # 简易：纯 DataFrame 透视导出（无 openpyxl 版式）
         combined_dfs = []
         per_question_sheets = []  # [(sheet_name, df), ...]
         for idx, res in enumerate(analysis_results, start=1):
@@ -1086,7 +1185,7 @@ def main():
                     stats_res=res.get("stats"),  # H3
                     alpha=float(st.session_state.get("quant_sig_alpha", 0.05)),
                 )
-            except Exception as e:
+            except Exception:
                 pivot_df = df_q.copy()
             if pivot_df.empty:
                 continue
@@ -1099,34 +1198,29 @@ def main():
             safe_name = make_safe_sheet_name(question, fallback_prefix="Q", index=idx)
             per_question_sheets.append((safe_name, pd.concat([title_df, pivot_df, empty_df], ignore_index=True)))
         summary_df = pd.concat(combined_dfs, ignore_index=True) if combined_dfs else pd.DataFrame({"提示": ["无数据"]})
-        exportable = [("交叉分析结果（汇总）", summary_df)] + per_question_sheets
-        export_options = [name for name, _ in exportable]
-        default_sel = list(export_options)
-        selected = st.multiselect(
-            "勾选要导出的 sheet（可多选）",
-            options=export_options,
-            default=default_sel,
-            key="quant_export_sheets",
+        exportable_simple = [("交叉分析（简易透视）", summary_df)] + per_question_sheets
+        export_options_simple = [name for name, _ in exportable_simple]
+        selected_simple = st.multiselect(
+            "勾选要导出的简易 sheet（可选）",
+            options=export_options_simple,
+            default=[],
+            key="quant_export_sheets_simple",
         )
-        if st.button("导出所选为 Excel"):
-            if not selected:
-                st.warning("请至少勾选一个 sheet 再导出。")
+        if st.button("导出所选为简易 Excel（无版式）"):
+            if not selected_simple:
+                st.warning("请至少勾选一个 sheet。")
             else:
                 try:
-                    sheets_to_write = [(name, df) for name, df in exportable if name in selected]
-                    debug_log(
-                        f"导出 Excel | selected={len(selected)} sheets_to_write={len(sheets_to_write)} "
-                        f"names={selected[:30]}"
-                    )
-                    bundle = ExportBundle(workbook_name="问卷定量交叉分析结果", sheets=sheets_to_write)
+                    sheets_to_write = [(name, df) for name, df in exportable_simple if name in selected_simple]
+                    bundle = ExportBundle(workbook_name="问卷定量交叉分析_简易透视", sheets=sheets_to_write)
                     buffer = io.BytesIO()
                     export_xlsx(bundle, buffer)
                     st.session_state.export_cross_buffer = buffer.getvalue()
-                    st.session_state.export_cross_name = "问卷定量交叉分析结果.xlsx"
+                    st.session_state.export_cross_name = "问卷定量交叉分析_简易透视.xlsx"
                     st.rerun()
                 except Exception as e:
-                    debug_log(f"导出 Excel 失败 | error={repr(e)}")
-                    st.error(f"导出 Excel 失败: {e}")
+                    debug_log(f"导出简易 Excel 失败 | error={repr(e)}")
+                    st.error(f"导出失败: {e}")
         if st.session_state.get("export_cross_buffer") is not None:
             st.download_button(
                 label="下载交叉统计结果 Excel",

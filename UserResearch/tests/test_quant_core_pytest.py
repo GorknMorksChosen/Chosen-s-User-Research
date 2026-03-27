@@ -9,6 +9,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from survey_tools.core.quant import QuestionSpec, run_group_difference_test, run_quant_cross_engine
+from survey_tools.core.survey_metadata_columns import is_metadata_column
 
 
 def _build_base_df() -> pd.DataFrame:
@@ -93,3 +94,11 @@ def test_matrix_rating_routes_to_rating_stats_in_cross_engine():
         assert row["题型"] == "矩阵评分"
         assert row["stats"] is not None
         assert row["stats"]["overall"]["test"] in ("welch_t", "ANOVA", "Kruskal-Wallis")
+
+
+def test_metadata_column_keywords_align_with_pipeline():
+    assert is_metadata_column("序号")
+    assert is_metadata_column("【序号】")
+    assert is_metadata_column("提交答卷时间")
+    assert is_metadata_column("所用时间（秒）")
+    assert not is_metadata_column("Q1.满意度")
