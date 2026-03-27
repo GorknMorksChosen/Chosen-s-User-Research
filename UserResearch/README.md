@@ -4,7 +4,7 @@
 > 
 > 本项目整合了问卷数据处理、统计建模与文本分析的核心工具，旨在提供一站式的问卷分析解决方案。
 >
-> **当前核心工具模块总数 = 5**。历史文档中的旧称已统一替换为模块化命名。
+> **当前核心工具模块总数 = 6（含 5 个主交互工具 + 1 条 Playtest Pipeline CLI）**。历史文档中的旧称已统一替换为模块化命名。
 
 ## 环境准备
 
@@ -37,6 +37,15 @@ cp .env.example .env     # macOS / Linux
 
 ---
 
+## 常用入口速查
+
+| 场景 | 命令 | 说明 |
+| :--- | :--- | :--- |
+| 日常交互分析（推荐） | `python web_tools_launcher.py` | 打开统一菜单，按编号启动 Quant / 满意度 / 分群 / 文本等工具 |
+| Playtest 自动化产出 | `python scripts/run_playtest_pipeline.py` | 自动读取最新数据并输出标准化多 Sheet 报告 |
+
+---
+
 ## 快速启动
 
 ### 方式一：统一启动菜单（推荐）
@@ -50,11 +59,16 @@ python web_tools_launcher.py
 streamlit run satisfaction_engine.py
 ```
 
+### 方式三：运行 Playtest 自动化流水线（CLI）
+```bash
+python scripts/run_playtest_pipeline.py
+```
+
 ---
 
 ## 核心工具体系（当前唯一有效口径）
 
-经过架构重构，当前项目统一为五大核心引擎：
+经过架构重构，当前项目统一为六大核心模块（5 个交互分析工具 + 1 条自动化 Pipeline）：
 
 | 序号 | 工具名称 | 入口脚本 | 定位 |
 | :--- | :--- | :--- | :--- |
@@ -63,6 +77,7 @@ streamlit run satisfaction_engine.py
 | 3 | 全链路归因分析 (Advanced) | `game_analyst.py` | 因子/分群/路径/非线性归因 |
 | 4 | 玩家分群分析 (Advanced) | `聚类.py` | 多算法分群 + 推荐策略 + 可视化画像 |
 | 5 | 问卷文本分析引擎 (Text Engine) | `问卷文本分析工具 v1.py` | 开放题语义分析与结构化导出 |
+| 6 | Playtest 自动化流水线 (Pipeline CLI) | `scripts/run_playtest_pipeline.py` | 自动读取最新数据并一键导出多 Sheet 报告 |
 
 ### 模块一：问卷定量交叉分析 (Quant Engine)
 *   **入口脚本**：`quant_analysis_engine.py`
@@ -116,6 +131,16 @@ streamlit run satisfaction_engine.py
     *   **[NEW]** 支持请求重试与指数退避、失败批次重放及调用统计，提升限流/抖动场景稳定性。
     *   **[NEW]** 导出链路改为流式写入并采用“准备导出→下载”模式，降低大样本导出内存峰值。
 *   **适用场景**：处理大量开放式问卷文本，挖掘非结构化数据中的洞察。
+
+### 模块六：Playtest 自动化流水线 (Pipeline CLI)
+*   **入口脚本**：`scripts/run_playtest_pipeline.py`
+*   **核心功能**：
+    *   自动读取 `data/raw/` 下最新问卷数据（`.sav/.csv/.xlsx`）。
+    *   自动题型识别与分组识别，支持 `--segment-col`、`--outline`、`--sheet-name`。
+    *   统一导出多 Sheet Excel（样本概况、交叉分析汇总、可选每题独立 Sheet、可选满意度回归结果）。
+    *   支持显著性检验开关与阈值（`--sig-test` / `--no-sig-test` / `--sig-alpha`）。
+*   **适用场景**：Playtest 周期中的批量自动化分析、标准化产出与快速复盘。
+*   **详细文档**：`docs/PLAYTEST_PIPELINE.md`
 
 ---
 
