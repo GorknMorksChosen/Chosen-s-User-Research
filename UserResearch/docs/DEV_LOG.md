@@ -45,6 +45,23 @@
 - `python -m py_compile "问卷文本分析工具 v1.py"` -> 通过
 - 针对用户样本复核：Q11/Q16/Q19/Q22/Q25/Q28/Q31 已统一识别为多选，不再出现同题“多选+单选”混拆。
 
+### 依赖安全热修复（Dependabot 高危告警）
+
+**涉及文件**：
+- `requirements.txt`
+- `requirements.lock.txt`
+- `tests/verify_dependency_matrix.py`
+- `docs/DEPENDENCY_MATRIX.md`
+
+**变更内容**：
+- 升级 `langchain-core` 到已修复区间版本：
+  - `requirements.txt`：`langchain-core>=1.2.22,<1.3`
+  - `requirements.lock.txt`：`langchain-core==1.2.22`
+- 同步更新依赖矩阵校验下限与文档，保证质量矩阵和文档口径一致。
+
+**目标**：
+- 消除 GitHub Dependabot 对 `langchain-core==1.2.17` 的高危告警（GHSA-qh6h-p6c9-ff54）。
+
 ---
 
 ## 📅 2026-03-27（最新）

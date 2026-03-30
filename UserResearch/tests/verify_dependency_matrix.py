@@ -17,7 +17,7 @@ MATRIX = [
     {"name": "semopy", "min": "2.3.11", "max": "2.3.999"},
     {"name": "factor-analyzer", "min": "0.5.1", "max": "0.5.999"},
     {"name": "langchain-openai", "min": "1.1.10", "max": "1.1.999"},
-    {"name": "langchain-core", "min": "1.2.17", "max": "1.2.999"},
+    {"name": "langchain-core", "min": "1.2.22", "max": "1.2.999"},
     {"name": "jieba", "min": "0.42.1", "max": "0.42.999"},
     {"name": "openpyxl", "min": "3.1.5", "max": "3.1.999"},
     {"name": "XlsxWriter", "min": "3.2.9", "max": "3.2.999"},
