@@ -43,6 +43,7 @@ cp .env.example .env     # macOS / Linux
 | :--- | :--- | :--- |
 | 日常交互分析（推荐） | `python web_tools_launcher.py` | 打开统一菜单，按编号启动 Quant / 满意度 / 分群 / 文本等工具 |
 | Playtest 自动化产出 | `python scripts/run_playtest_pipeline.py` | 自动读取最新数据并输出标准化多 Sheet 报告 |
+| 玩家画像多维打标签（专项） | `streamlit run player_profiling_tags.py` | 上传问卷后按列+标签库调用 LLM 自动打标，支持失败重跑与人工复核回写 |
 
 ---
 
@@ -133,6 +134,17 @@ python scripts/run_playtest_pipeline.py
     *   **[NEW | 2026-03-30]** 接入问卷大纲解析（问卷星/腾讯）并复用统一题型识别口径，选择器显示题型标签。
     *   **[NEW | 2026-03-30]** 新增「按题选择（同题多列自动归并）」模式，多选题子列按同一题归并，输入体验与 Quant/Pipeline 对齐。
 *   **适用场景**：处理大量开放式问卷文本，挖掘非结构化数据中的洞察。
+
+### 模块补充：玩家画像多维打标签工具（专项 Web）
+*   **入口脚本**：`player_profiling_tags.py`
+*   **当前能力（2026-03-30）**：
+    *   上传 `.xlsx/.csv` 后按题列多选组装结构化画像输入，自动过滤空值/跳过值；
+    *   通过 OpenAI 兼容接口并发调用 LLM，强约束“仅从预设标签库选择 1-3 个标签”；
+    *   输出 `AI画像标签` / `AI打标理由`，支持失败样本重跑（仅重跑 `待人工复核`）；
+    *   支持失败样本清单导出（含人工复核模板列）；
+    *   支持人工复核回写（可选折叠区，回写到 `最终画像标签` / `最终打标理由` / `最终标签来源`，不覆盖 AI 原列）；
+    *   支持导出“交付口径”列（优先最终，回退 AI），并内置标签命中看板（标签人数/占比 + Top 组合）。
+*   **当前产品决策**：该工具先以专项脚本形式维护，不并入 launcher 主菜单；当口径稳定后再评估纳入 `tool_registry.py`。
 
 ### 模块六：Playtest 自动化流水线 (Pipeline CLI)
 *   **入口脚本**：`scripts/run_playtest_pipeline.py`
