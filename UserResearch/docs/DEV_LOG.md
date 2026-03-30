@@ -62,6 +62,19 @@
 **目标**：
 - 消除 GitHub Dependabot 对 `langchain-core==1.2.17` 的高危告警（GHSA-qh6h-p6c9-ff54）。
 
+### 依赖升级后自动检查脚本（供 AI Agent / Cursor 统一执行）
+
+**涉及文件**：
+- `scripts/post_dependency_upgrade_check.py`（新增）
+- `README.md`
+
+**变更内容**：
+- 新增统一检查脚本，面向“依赖升级后”场景，默认执行：
+  - `tests/verify_dependency_matrix.py`
+  - `requirements.lock.txt` 的 OSV 漏洞扫描
+- 支持 `--with-quality-matrix` 可选参数，额外执行 `tests/run_quality_matrix.py`。
+- 输出统一 PASS/FAIL 结果并返回对应退出码，便于 AI agent / CI / Cursor 自动判断是否可继续提交。
+
 ---
 
 ## 📅 2026-03-27（最新）

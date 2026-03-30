@@ -344,6 +344,24 @@ python tests/verify_dependency_matrix.py
 
 矩阵详情见 `docs/DEPENDENCY_MATRIX.md`。
 
+### 依赖升级后自动检查（AI Agent / Cursor 推荐）
+
+为统一所有代理工具在“升级依赖后”的执行动作，新增一键检查脚本：
+
+```bash
+cd UserResearch
+python scripts/post_dependency_upgrade_check.py
+```
+
+可选执行完整质量矩阵（耗时更长）：
+
+```bash
+cd UserResearch
+python scripts/post_dependency_upgrade_check.py --with-quality-matrix
+```
+
+建议规则：凡修改 `requirements.txt` / `requirements.lock.txt`，提交前至少执行一次该脚本并确保返回 `RESULT: PASS`。
+
 ---
 
 ## 📦 依赖安装
