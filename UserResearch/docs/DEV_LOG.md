@@ -6,6 +6,47 @@
 
 ---
 
+## 📅 2026-03-30（最新）
+
+### Pipeline 与文本工具输入口径对齐（分组防误判 / 多选识别 / 题级选择）
+
+**涉及文件**：
+- `scripts/run_playtest_pipeline.py`
+- `survey_tools/web/pipeline_app.py`
+- `survey_tools/core/quant.py`
+- `survey_tools/core/question_type.py`
+- `问卷文本分析工具 v1.py`
+- `README.md`
+- `docs/PLAYTEST_PIPELINE.md`
+
+**变更内容**：
+
+- **Pipeline 分组防误判**：
+  - `_resolve_segment_col` 自动识别分组列时，新增“跳过题目列（可提取题号）”规则，避免把问卷题目/选项列误识别为分组列。
+  - `pipeline_app` 高级配置新增「总体（不分组）」选项；当用户手动选择题目列作为分组列时，运行前自动回退到总体并给出 warning。
+
+- **问卷星多选题识别修复**：
+  - `extract_qnum` 新增对 `N(子项)` / `N（子项）` 的题号识别，修复同题多选子列因题号未识别被拆成单选的问题（典型如 Q11/Q16/Q19/Q22/Q25/Q28/Q31）。
+  - 新增 `_warn_mixed_types_within_question` 运行时一致性告警：同题出现多种题型时打印详细提示，重点标记“多选 + 单选”高风险组合。
+
+- **多选导出文案修复**：
+  - `get_option_label` 增强无冒号列名清洗：支持从 `?()/？（）` 末尾括号提取选项，并去除 `5.` / `5(` / `Q5.` 等题号前缀，修复导出中“5 (xxx)”前缀残留。
+
+- **文本工具输入体验与其他工具对齐**：
+  - 接入大纲上传与来源选择（问卷星/腾讯），加载数据后同步构建题型映射。
+  - 新增「按题选择（同题多列自动归并）」：在文本工具中可按题而非按列选择输入，多选题子列自动归并为同一道题。
+  - 选择器增加题型标签显示，支持“目标列仅显示开放文本题”筛选；背景列默认排除元数据，减少误选噪声。
+
+**验证结果**：
+- `python -m py_compile scripts/run_playtest_pipeline.py` -> 通过
+- `python -m py_compile survey_tools/web/pipeline_app.py` -> 通过
+- `python -m py_compile survey_tools/core/quant.py` -> 通过
+- `python -m py_compile survey_tools/core/question_type.py` -> 通过
+- `python -m py_compile "问卷文本分析工具 v1.py"` -> 通过
+- 针对用户样本复核：Q11/Q16/Q19/Q22/Q25/Q28/Q31 已统一识别为多选，不再出现同题“多选+单选”混拆。
+
+---
+
 ## 📅 2026-03-27（最新）
 
 ### 全量 Workspace Review（代码+测试+文档对齐）与发布前同步

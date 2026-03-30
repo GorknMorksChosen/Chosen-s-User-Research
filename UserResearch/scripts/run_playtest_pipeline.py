@@ -452,6 +452,44 @@ def _auto_classify_columns(
     return column_type_map
 
 
+def _warn_mixed_types_within_question(
+    column_type_map: Dict[str, str],
+) -> None:
+    """运行时自检：同一题号下若出现混合题型，输出 warning 便于排查。"""
+    q_type_cols: Dict[int, Dict[str, List[str]]] = defaultdict(lambda: defaultdict(list))
+    for col, q_type in column_type_map.items():
+        q_str = extract_qnum(str(col))
+        if not q_str:
+            continue
+        try:
+            q_num = int(q_str)
+        except ValueError:
+            continue
+        q_type_cols[q_num][str(q_type)].append(str(col))
+
+    for q_num in sorted(q_type_cols.keys()):
+        type_map = q_type_cols[q_num]
+        non_ignored_types = sorted(t for t in type_map.keys() if t != "忽略")
+        if len(non_ignored_types) <= 1:
+            continue
+
+        # 重点提示历史高风险：同一题中混入「多选 + 单选」
+        risk_hint = ""
+        if "多选" in non_ignored_types and "单选" in non_ignored_types:
+            risk_hint = "（高风险：同题出现“多选+单选”，可能导致多选子列被拆分）"
+
+        print(
+            f"  ⚠  题型一致性告警：Q{q_num} 同题下出现多种题型 "
+            f"{non_ignored_types} {risk_hint}"
+        )
+        for t in non_ignored_types:
+            cols_preview = type_map.get(t, [])
+            preview = "；".join(cols_preview[:3])
+            if len(cols_preview) > 3:
+                preview += f"；...（共 {len(cols_preview)} 列）"
+            print(f"     - {t}: {preview}")
+
+
 # ---------------------------------------------------------------------------
 # 辅助：寻找分组列（含方向 C 显式参数 + 方向 E 总体 fallback）
 # ---------------------------------------------------------------------------
@@ -479,6 +517,9 @@ def _resolve_segment_col(
 
     for col in df.columns:
         if column_type_map.get(col) in ("忽略", "评分", "NPS", "矩阵评分"):
+            continue
+        # 自动分组列仅从“非题目列”中识别，避免把问卷题目/选项列误当分组（如“第8题-类型偏好”）。
+        if extract_qnum(str(col)):
             continue
         lower = str(col).lower()
         for kw in _SEGMENT_KEYWORDS:
@@ -1569,6 +1610,7 @@ def run_pipeline(
         outline=outline,
         matrix_q_map=matrix_q_map,
     )
+    _warn_mixed_types_within_question(column_type_map)
     type_summary: Dict[str, int] = defaultdict(int)
     for t in column_type_map.values():
         type_summary[t] += 1

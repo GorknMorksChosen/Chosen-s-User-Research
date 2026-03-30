@@ -7,6 +7,7 @@ import pandas as pd
 import streamlit as st
 
 from scripts.run_playtest_pipeline import run_pipeline
+from survey_tools.core.quant import extract_qnum
 from survey_tools.utils.io import load_survey_data
 from survey_tools.web.outline_upload import OUTLINE_PLATFORM_OPTIONS, parse_uploaded_outline_file
 
@@ -80,7 +81,7 @@ def main() -> None:
             parsed_outline = None
 
     with st.expander("高级配置", expanded=True):
-        segment_options = ["自动推断"]
+        segment_options = ["自动推断", "总体（不分组）"]
         if df is not None:
             segment_options += [str(c) for c in df.columns]
         segment_choice = st.selectbox("交叉分组列", options=segment_options, index=0)
@@ -112,7 +113,20 @@ def main() -> None:
         return
 
     output_dir = str(Path("data") / "processed")
-    segment_col = None if segment_choice == "自动推断" else segment_choice
+    if segment_choice == "自动推断":
+        segment_col = None
+    elif segment_choice == "总体（不分组）":
+        # 传入一个不会匹配到真实列名的占位 hint，强制回退到“总体”虚拟分组。
+        segment_col = "__FORCE_OVERALL__"
+    else:
+        segment_col = segment_choice
+        # 防误选：如果手动选择的是题目列（带题号），自动回退到总体分组。
+        if extract_qnum(str(segment_col)):
+            st.warning(
+                "检测到你选择的是问卷题目列（带题号），这通常不适合作为分组列。"
+                "本次已自动回退为“总体（不分组）”以避免误分组。"
+            )
+            segment_col = "__FORCE_OVERALL__"
 
     try:
         with st.status("正在执行 Playtest 流水线...", expanded=True) as status:

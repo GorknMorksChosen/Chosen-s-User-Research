@@ -80,7 +80,22 @@ def get_option_label(col_name):
         parts = s.split(":", 1)
         if len(parts) > 1 and parts[1].strip():
             return parts[1].strip()
-    return s
+    # 问卷星常见无冒号多选子列：`5(选项...)` / `5 (选项...)` / `Q5. ...?(选项...)`
+    # 1) 优先提取问号后的最后一段括号内容
+    m_q_paren = re.search(r"[?？]\s*[（(]\s*(.+?)\s*[)）]\s*$", s)
+    if m_q_paren and m_q_paren.group(1).strip():
+        return m_q_paren.group(1).strip()
+
+    # 2) 去掉题号前缀（如 `5.` / `5、` / `5(` / `Q5.`）
+    cleaned = re.sub(r"^\s*Q?\d+\s*[、.。)\]）]?\s*", "", s).strip()
+    cleaned = re.sub(r"^\s*\d+\s*[（(]\s*", "", cleaned).strip()
+
+    # 3) 若整体被括号包裹，去壳后返回
+    m_wrap = re.match(r"^[（(]\s*(.+?)\s*[)）]\s*$", cleaned)
+    if m_wrap and m_wrap.group(1).strip():
+        return m_wrap.group(1).strip()
+
+    return cleaned if cleaned else s
 
 
 def count_mentions(series):

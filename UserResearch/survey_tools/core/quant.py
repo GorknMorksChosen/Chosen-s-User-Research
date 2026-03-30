@@ -1181,10 +1181,15 @@ def extract_qnum(col_name):
     m = re.match(r"^\s*Q(\d+)(?:[.\s_\-]|$)", col_str)
     if m:
         return m.group(1)
+    # 兼容问卷星多选子列：`31(选项...)` / `31（选项...）`
+    m = re.match(r"^\s*(\d+)\s*[（(]", col_str)
+    if m:
+        return m.group(1)
     col_tmp = re.sub(r"（.*?）", "", col_str)
     col_tmp = re.sub(r"\(.*?\)", "", col_tmp)
     patterns = [
-        r"^(\d+)[、.)]",
+        # 问卷星常见：`31.` / `31、` / `31)` / `31(` / `31（`
+        r"^(\d+)\s*[、.)（(]",
         r"\bQ?(\d+)[\s_\-]",
         r"(?:问题|题目|Question)\s*(\d+)",
     ]

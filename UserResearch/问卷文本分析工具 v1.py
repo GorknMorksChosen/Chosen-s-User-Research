@@ -20,6 +20,18 @@ from openpyxl.utils.dataframe import dataframe_to_rows
 
 from pydantic import BaseModel, Field
 from survey_core_quant import make_safe_sheet_name
+from survey_tools.core.question_type import (
+    detect_column_type,
+    get_prefix,
+    infer_type_from_columns,
+    parse_columns_for_questions,
+)
+from survey_tools.core.quant import extract_qnum
+from survey_tools.core.survey_metadata_columns import is_metadata_column
+from survey_tools.web.outline_upload import (
+    OUTLINE_PLATFORM_OPTIONS,
+    parse_uploaded_outline_file,
+)
 
 # --- 1. 配置与初始化 ---
 st.set_page_config(page_title="通用问卷文本分析引擎", layout="wide")
@@ -185,6 +197,117 @@ def build_target_string(row, target_cols):
             if val is not None:
                 parts.append(f"{t}: {val}")
     return " | ".join(parts)
+
+
+def build_text_tool_column_type_map(df: pd.DataFrame, outline: dict | None = None) -> dict[str, str]:
+    """为文本工具构建列题型映射（与 Quant/Pipeline 口径尽量对齐）。"""
+    columns = df.columns.tolist()
+    questions_data = parse_columns_for_questions(columns)
+
+    q_num_to_type: dict[int, str] = {}
+    for q_num, info in questions_data.items():
+        raw = infer_type_from_columns(info)
+        if raw:
+            if "矩阵" in raw:
+                q_num_to_type[q_num] = "矩阵"
+            elif "多选" in raw:
+                q_num_to_type[q_num] = "多选"
+            elif "NPS" in raw:
+                q_num_to_type[q_num] = "NPS"
+            elif "评分" in raw:
+                q_num_to_type[q_num] = "评分"
+            elif "填空" in raw or "开放" in raw:
+                q_num_to_type[q_num] = "开放文本"
+            else:
+                q_num_to_type[q_num] = "单选"
+
+    if outline:
+        for q_num, info in outline.items():
+            otype = str(info.get("type", ""))
+            if "矩阵" in otype:
+                if "文本" in otype or "填空" in otype:
+                    q_num_to_type[q_num] = "开放文本"
+                else:
+                    q_num_to_type[q_num] = "矩阵"
+            elif "多选" in otype:
+                q_num_to_type[q_num] = "多选"
+            elif "NPS" in otype.upper() or "nps" in otype.lower():
+                q_num_to_type[q_num] = "NPS"
+            elif "填空" in otype or "文本" in otype:
+                q_num_to_type[q_num] = "开放文本"
+            elif "量表" in otype or "评分" in otype:
+                q_num_to_type[q_num] = "评分"
+            elif "单选" in otype:
+                q_num_to_type[q_num] = "单选"
+
+    known_multi_prefixes: set[str] = set()
+    for col in columns:
+        q_str = extract_qnum(str(col))
+        if q_str:
+            try:
+                if q_num_to_type.get(int(q_str)) == "多选":
+                    known_multi_prefixes.add(get_prefix(str(col)))
+            except ValueError:
+                pass
+
+    type_map: dict[str, str] = {}
+    for col in columns:
+        col_s = str(col)
+        if is_metadata_column(col_s):
+            type_map[col_s] = "元数据"
+            continue
+        q_str = extract_qnum(col_s)
+        if q_str:
+            try:
+                q_num = int(q_str)
+                if q_num in q_num_to_type:
+                    type_map[col_s] = q_num_to_type[q_num]
+                    continue
+            except ValueError:
+                pass
+        detected = detect_column_type(col_s, df[col], get_prefix(col_s), known_multi_prefixes)
+        type_map[col_s] = "开放文本" if detected == "排序" else detected
+    return type_map
+
+
+def build_question_selector_map(df: pd.DataFrame, col_type_map: dict[str, str]) -> dict[str, list[str]]:
+    """构建题目级选择映射：显示标签 -> 该题对应的列集合。"""
+    q_data = parse_columns_for_questions(df.columns.tolist())
+    label_map: dict[str, list[str]] = {}
+
+    for q_num in sorted(q_data.keys()):
+        info = q_data[q_num]
+        q_cols = [c for c in df.columns if extract_qnum(str(c)) == str(q_num)]
+        if not q_cols:
+            continue
+        type_candidates = [col_type_map.get(str(c), "未识别") for c in q_cols]
+        type_candidates = [t for t in type_candidates if t not in ("元数据", "未识别")]
+        q_type = type_candidates[0] if type_candidates else col_type_map.get(str(q_cols[0]), "未识别")
+        stem = str(info.get("stem") or q_cols[0]).strip()
+        label = f"Q{int(q_num):03d} [{q_type}] {stem}"
+        base_label = label
+        idx = 2
+        while label in label_map:
+            label = f"{base_label} ({idx})"
+            idx += 1
+        label_map[label] = [str(c) for c in q_cols]
+
+    # 无题号列作为“单列题目”补充到题目选择器，避免信息丢失（如 type.玩家分类）
+    for c in df.columns:
+        c_str = str(c)
+        if extract_qnum(c_str):
+            continue
+        t = col_type_map.get(c_str, "未识别")
+        if t == "元数据":
+            continue
+        label = f"[列:{t}] {c_str}"
+        base_label = label
+        idx = 2
+        while label in label_map:
+            label = f"{base_label} ({idx})"
+            idx += 1
+        label_map[label] = [c_str]
+    return label_map
 
 
 def compute_keyword_deviations(df, target_cols, group_col, keywords, threshold=0.15, topk=15):
@@ -476,6 +599,10 @@ def init_session_state():
         st.session_state.export_data_bytes = None
     if "export_data_name" not in st.session_state:
         st.session_state.export_data_name = ""
+    if "parsed_outline" not in st.session_state:
+        st.session_state.parsed_outline = None
+    if "column_type_map" not in st.session_state:
+        st.session_state.column_type_map = {}
 
 
 def apply_user_dict():
@@ -679,6 +806,17 @@ st.title("🧠 通用问卷文本分析引擎")
 st.markdown("基于 AI 的文本分析与深度洞察引擎，支持跨列背景关联分析。")
 
 uploaded_file = st.file_uploader("上传调研数据 (Excel / CSV / SAV)", type=["xlsx", "xls", "csv", "sav"])
+outline_file = st.file_uploader(
+    "上传问卷大纲（可选，.docx / .txt）",
+    type=["docx", "txt"],
+    help="建议上传，用于统一题型识别口径并优化目标列选择体验。",
+)
+outline_source = st.selectbox(
+    "大纲来源",
+    options=OUTLINE_PLATFORM_OPTIONS,
+    index=0,
+    help="解析规则按来源选择，与扩展名解耦。",
+)
 
 if uploaded_file:
     try:
@@ -699,7 +837,18 @@ if uploaded_file:
         df = df.reset_index(drop=True)
         if "Internal_ID" not in df.columns:
             df.insert(0, "Internal_ID", df.index + 1)
+        parsed_outline = None
+        if outline_file is not None:
+            try:
+                parsed_outline = parse_uploaded_outline_file(outline_file, outline_source)
+                st.info(f"已解析问卷大纲：{len(parsed_outline)} 道题（来源：{outline_source}）")
+            except Exception as e:
+                st.warning(f"大纲解析失败，已回退自动识别：{e}")
+                parsed_outline = None
+        column_type_map = build_text_tool_column_type_map(df, outline=parsed_outline)
         st.session_state.df = df
+        st.session_state.parsed_outline = parsed_outline
+        st.session_state.column_type_map = column_type_map
         st.session_state.export_data_bytes = None
         st.session_state.export_data_name = ""
         st.success(f"成功读取文件: {uploaded_file.name}, 共 {len(df)} 行数据")
@@ -709,12 +858,87 @@ if uploaded_file:
 if st.session_state.df is not None:
     df = st.session_state.df
     cols = df.columns.tolist()
+    col_type_map = st.session_state.get("column_type_map", {}) or {}
+    if not col_type_map:
+        col_type_map = build_text_tool_column_type_map(df, outline=st.session_state.get("parsed_outline"))
+        st.session_state.column_type_map = col_type_map
+    target_default_options = [c for c in cols if col_type_map.get(c) == "开放文本"]
+    if not target_default_options:
+        target_default_options = [c for c in cols if col_type_map.get(c) not in ("元数据", "多选", "矩阵")]
+    context_default_options = [c for c in cols if col_type_map.get(c) not in ("元数据", "开放文本")]
+    question_map = build_question_selector_map(df, col_type_map)
+    target_only_open_text = st.toggle(
+        "目标列仅显示开放文本题（推荐）",
+        value=True,
+        help="开启后，目标列仅展示识别为开放文本的题目；关闭后可查看全部列。",
+        disabled=config_locked,
+    )
+    question_level_mode = st.toggle(
+        "按题选择（同题多列自动归并）",
+        value=True,
+        help="开启后，你选择的是“题目”而不是“单列”；多选题子列会自动归并为同一道题。",
+        disabled=config_locked,
+    )
+    target_options = target_default_options if target_only_open_text else cols
+
+    def _fmt_col(c: str) -> str:
+        t = col_type_map.get(c, "未识别")
+        return f"[{t}] {c}"
+
+    def _expand_selected_keys(selected_keys: list[str], mapping: dict[str, list[str]]) -> list[str]:
+        expanded: list[str] = []
+        for k in selected_keys:
+            expanded.extend(mapping.get(k, []))
+        # 去重且保序
+        return list(dict.fromkeys(expanded))
+
+    def _key_type(k: str) -> str:
+        m = re.search(r"\[(.+?)\]", k)
+        return m.group(1) if m else "未识别"
+
+    if question_level_mode:
+        target_question_options = list(question_map.keys())
+        if target_only_open_text:
+            target_question_options = [k for k in target_question_options if _key_type(k) == "开放文本"]
+        context_question_options = [k for k in question_map.keys() if _key_type(k) != "元数据"]
+    target_question_keys: list[str] = []
     
     col1, col2 = st.columns(2)
     with col1:
-        target_cols = st.multiselect("🎯 选择分析目标列 (文本内容)", options=cols, help="AI 将对这些列的文本进行深度分析", disabled=config_locked)
+        if question_level_mode:
+            target_question_keys = st.multiselect(
+                "🎯 选择分析目标题目 (文本内容)",
+                options=target_question_options,
+                help="按题目选择，工具会自动展开到对应列。",
+                disabled=config_locked,
+            )
+            target_cols = _expand_selected_keys(target_question_keys, question_map)
+        else:
+            target_cols = st.multiselect(
+                "🎯 选择分析目标列 (文本内容)",
+                options=target_options,
+                default=[c for c in target_default_options if c in target_options][:3],
+                format_func=_fmt_col,
+                help="建议优先选择开放文本题；大纲已接入时会按题型标签展示。",
+                disabled=config_locked,
+            )
     with col2:
-        context_cols = st.multiselect("💡 选择背景参考列 (关联信息)", options=cols, help="AI 分析时将参考这些列的信息，如：最喜欢的角色、用户群体等", disabled=config_locked)
+        if question_level_mode:
+            context_question_keys = st.multiselect(
+                "💡 选择背景参考题目 (关联信息)",
+                options=[k for k in context_question_options if k not in target_question_keys],
+                help="按题目选择，工具会自动展开到对应列；可与目标题分离选择。",
+                disabled=config_locked,
+            )
+            context_cols = [c for c in _expand_selected_keys(context_question_keys, question_map) if c not in target_cols]
+        else:
+            context_cols = st.multiselect(
+                "💡 选择背景参考列 (关联信息)",
+                options=[c for c in context_default_options if c not in target_cols],
+                format_func=_fmt_col,
+                help="建议选择结构化背景列（单选/多选/评分），避免与目标文本题同构。",
+                disabled=config_locked,
+            )
         st.info(
             "💡 专家建议：如何选择背景参考列？\n\n"
             "追求“独立洞察”（盲测）：若想验证玩家填空是否真实反映了其潜意识，"
@@ -732,6 +956,10 @@ if st.session_state.df is not None:
         )
         st.session_state.blind_mode = blind_mode
         st.session_state.context_cols = context_cols
+        if question_level_mode:
+            st.caption(
+                f"按题选择已展开：目标 {len(target_cols)} 列，背景 {len(context_cols)} 列。"
+            )
     
     core_segment_col = st.selectbox(
         "🎯 选择核心分组列（如：用户群体/玩家类型）",
