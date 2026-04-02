@@ -673,7 +673,13 @@ with st.sidebar:
     st.title("⚙️ 配置中心")
     st.session_state.api_key = st.text_input("LLM API Key", value=st.session_state.api_key, type="password", disabled=config_locked)
     st.session_state.base_url = st.text_input("API Base URL", value=st.session_state.base_url, disabled=config_locked)
-    model_name = st.selectbox("选择模型", ["gpt-3.5-turbo", "gpt-4-turbo", "deepseek-chat"], index=0, disabled=config_locked)
+    model_name = st.text_input(
+        "选择模型",
+        value=st.session_state.model_name,
+        help="可手动输入任意模型名，如 deepseek-chat、deepseek-reasoner、gpt-4o-mini 等。",
+        disabled=config_locked,
+    ).strip()
+    st.session_state.model_name = model_name
     batch_size = st.slider(
         "每次请求批大小",
         min_value=1,
