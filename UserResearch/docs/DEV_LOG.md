@@ -10,6 +10,28 @@
 
 ## 📅 2026-04-02（最新）
 
+### 工具 2 / 工具 3：侧边栏「一键整合导出 Excel」（多 Sheet）
+
+**背景**：满意度 Web（launcher 菜单 **2**）与全链路归因 `game_analyst`（菜单 **3**）大量结果以 Plotly 图表展示，浏览器需对图表工具栏逐张操作；表格数据原先缺少「单文件汇总」出口。
+
+**涉及文件**：
+- `survey_tools/web/satisfaction_app.py`
+- `game_analyst.py`
+- `README.md`（`UserResearch/` 主文档：模块二/三补充、工具 2/3 对照表）
+- `../README.md`（仓库根 README：核心工具体系处增加跨链说明）
+- `docs/DEV_LOG.md`（本条目）
+
+**本轮落地内容**：
+- **满意度（Standard）**：左侧边栏新增 **「📦 一键整合导出」**，将本会话中已执行步骤产生的**数据表**合并为单个 `.xlsx`（多 Sheet）。随分析写入 `session_state` 的缓存包括：IPA 明细、多元回归诊断（含模型健康度与自动摘要）、以及「高级模式」各 Tab 在点击按钮后产生的结果（相关性矩阵、因子载荷、聚类均值/样本明细、回归、Kano、SHAP、路径 SEM 等）。
+- **全链路归因（Advanced）**：左侧边栏同样提供 **「📦 一键整合导出」**，汇总各 Tab 已计算表格（如相关性矩阵与高相关对、因子载荷、聚类、多元回归与模型健康度、Kano、SHAP、路径 SEM 等）。**决策中心**区补充说明：表格优先走侧边栏整合下载，无需依赖图表工具栏逐个保存。
+- **产品口径**：整合包仅包含 **Excel 数据表**；交互图表仍在页面中查看或截图，不自动嵌入工作簿。
+
+**验证**：
+- `python -m py_compile survey_tools/web/satisfaction_app.py` -> 通过
+- `python -m py_compile game_analyst.py` -> 通过
+
+---
+
 ### Quant/Web 与 v1.4（桌面版）稳定性修复批次
 
 **涉及文件**：
