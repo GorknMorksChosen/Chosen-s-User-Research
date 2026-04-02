@@ -9,6 +9,7 @@ import streamlit as st
 from scripts.run_playtest_pipeline import run_pipeline
 from survey_tools.core.quant import extract_qnum
 from survey_tools.utils.io import load_survey_data
+from survey_tools.utils.download_filename import safe_download_filename
 from survey_tools.web.outline_upload import OUTLINE_PLATFORM_OPTIONS, parse_uploaded_outline_file
 
 
@@ -148,14 +149,22 @@ def main() -> None:
 
         output_file = Path(run_res["output_file"])
         st.success("分析完成，报告已生成。")
-        with output_file.open("rb") as f:
-            st.download_button(
-                "下载 Excel 报告",
-                data=f,
-                file_name=output_file.name,
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                use_container_width=True,
-            )
+        _marker = str(output_file.resolve())
+        if st.session_state.get("pipeline_dl_marker") != _marker:
+            st.session_state["pipeline_dl_filename"] = output_file.name
+            st.session_state["pipeline_dl_marker"] = _marker
+        st.text_input("下载文件名（可修改）", key="pipeline_dl_filename")
+        _pipe_fn = safe_download_filename(
+            st.session_state.get("pipeline_dl_filename", output_file.name),
+            fallback=output_file.name,
+        )
+        st.download_button(
+            "下载 Excel 报告",
+            data=output_file.read_bytes(),
+            file_name=_pipe_fn,
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            use_container_width=True,
+        )
     except Exception as exc:
         st.error(f"流水线执行失败：{exc}")
 

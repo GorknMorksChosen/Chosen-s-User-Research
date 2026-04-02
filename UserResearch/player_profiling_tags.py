@@ -42,6 +42,7 @@ import streamlit as st
 from survey_tools.config import OPENAI_BASE_URL, OPENAI_API_KEY, OPENAI_MODEL
 from survey_tools.core.question_type import parse_columns_for_questions
 from survey_tools.utils.wjx_header import normalize_wjx_headers
+from survey_tools.utils.download_filename import safe_download_filename
 
 
 # ---------------------------------------------------------------------
@@ -844,6 +845,10 @@ def main() -> None:
         st.session_state["result_excel"] = None
     if "prefer_final_export" not in st.session_state:
         st.session_state["prefer_final_export"] = True
+    if "player_prof_fail_dl_name" not in st.session_state:
+        st.session_state["player_prof_fail_dl_name"] = "玩家画像失败样本清单.xlsx"
+    if "player_prof_main_dl_name" not in st.session_state:
+        st.session_state["player_prof_main_dl_name"] = "玩家画像打标结果.xlsx"
 
     if uploaded_file is None:
         st.info("请先在左侧上传 .xlsx 或 .csv 文件。")
@@ -1007,10 +1012,15 @@ def main() -> None:
         # 失败样本导出清单：便于线下人工复核
         failed_export_bytes = to_failed_rows_excel_bytes(st.session_state["result_df"])
         st.caption("失败样本清单已内置人工复核模板列：人工复核标签 / 人工复核理由 / 是否确认 / 复核人 / 复核时间。")
+        st.text_input("失败清单下载文件名（可修改）", key="player_prof_fail_dl_name")
+        _fail_fn = safe_download_filename(
+            st.session_state.get("player_prof_fail_dl_name", "玩家画像失败样本清单.xlsx"),
+            fallback="玩家画像失败样本清单.xlsx",
+        )
         st.download_button(
             label="下载失败样本清单（仅待人工复核）",
             data=failed_export_bytes,
-            file_name="玩家画像失败样本清单.xlsx",
+            file_name=_fail_fn,
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         )
 
@@ -1053,10 +1063,15 @@ def main() -> None:
         )
         delivery_excel = to_excel_bytes(delivery_df)
 
+        st.text_input("主结果下载文件名（可修改）", key="player_prof_main_dl_name")
+        _main_fn = safe_download_filename(
+            st.session_state.get("player_prof_main_dl_name", "玩家画像打标结果.xlsx"),
+            fallback="玩家画像打标结果.xlsx",
+        )
         st.download_button(
             label="下载结果 Excel（含 AI画像标签 / AI打标理由）",
             data=delivery_excel,
-            file_name="玩家画像打标结果.xlsx",
+            file_name=_main_fn,
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         )
 

@@ -72,19 +72,30 @@ def get_option_label(col_name):
         str，冒号后的选项文本；无冒号或选项为空时返回完整列名。
     """
     s = str(col_name).strip()
+    # 问卷星多选常见：题干里含“限选N个…）(首个选项)”；
+    # 优先提取最后一段选项括号，避免把“限选提示”带入选项文本。
+    if re.search(r"(?:限选|最多选|最多可选)\s*\d+\s*(?:个|项)", s):
+        m_tail_opt = re.search(r"[)）]\s*[（(]\s*(.+?)\s*[)）]\s*$", s)
+        if m_tail_opt and m_tail_opt.group(1).strip():
+            label = m_tail_opt.group(1).strip()
+            if not re.fullmatch(r"[\s_＿()（）:：-]+", label):
+                return label
     if "：" in s:
         parts = s.split("：", 1)
         if len(parts) > 1 and parts[1].strip():
-            return parts[1].strip()
+            label = parts[1].strip()
+            return "" if re.fullmatch(r"[\s_＿()（）:：-]+", label) else label
     if ":" in s:
         parts = s.split(":", 1)
         if len(parts) > 1 and parts[1].strip():
-            return parts[1].strip()
+            label = parts[1].strip()
+            return "" if re.fullmatch(r"[\s_＿()（）:：-]+", label) else label
     # 问卷星常见无冒号多选子列：`5(选项...)` / `5 (选项...)` / `Q5. ...?(选项...)`
     # 1) 优先提取问号后的最后一段括号内容
     m_q_paren = re.search(r"[?？]\s*[（(]\s*(.+?)\s*[)）]\s*$", s)
     if m_q_paren and m_q_paren.group(1).strip():
-        return m_q_paren.group(1).strip()
+        label = m_q_paren.group(1).strip()
+        return "" if re.fullmatch(r"[\s_＿()（）:：-]+", label) else label
 
     # 2) 去掉题号前缀（如 `5.` / `5、` / `5(` / `Q5.`）
     cleaned = re.sub(r"^\s*Q?\d+\s*[、.。)\]）]?\s*", "", s).strip()
@@ -93,9 +104,11 @@ def get_option_label(col_name):
     # 3) 若整体被括号包裹，去壳后返回
     m_wrap = re.match(r"^[（(]\s*(.+?)\s*[)）]\s*$", cleaned)
     if m_wrap and m_wrap.group(1).strip():
-        return m_wrap.group(1).strip()
+        label = m_wrap.group(1).strip()
+        return "" if re.fullmatch(r"[\s_＿()（）:：-]+", label) else label
 
-    return cleaned if cleaned else s
+    label = cleaned if cleaned else s
+    return "" if re.fullmatch(r"[\s_＿()（）:：-]+", label) else label
 
 
 def count_mentions(series):
@@ -170,6 +183,11 @@ def infer_type_from_columns(info):
     if "【多选题" in text or "【多选】" in text or "多选题" in text or "（多选）" in text or "(多选)" in text or "[多选]" in text:
         return "多选题"
     if "多选" in text and ("限选" in text or "最多选" in text):
+        return "多选题"
+    # 兼容问卷星“多选”常见但未显式包含“多选”关键词的写法：
+    # 例如：「……（限选3个，如果多于3个，请选择您最不满意的点）(选项A …),」
+    # 这类列在旧逻辑中可能无法命中多选推断，随后被数值启发式误判为「评分」。
+    if re.search(r"(?:限选|最多选|最多可选)\s*\d+\s*(?:个|项)", text):
         return "多选题"
     if stem_text_suggests_nps(joined):
         return "NPS题"
@@ -259,11 +277,29 @@ def parse_columns_for_questions(columns):
         注意：无法解析题号（非整数）的列会被跳过。
     """
     questions_data = defaultdict(lambda: {"stem": "", "all_cols": []})
-    for col in columns:
+    cols_list = list(columns)
+    limit_multi_pat = re.compile(r"(?:限选|最多选|最多可选)\s*\d+\s*(?:个|项)")
+
+    for idx, col in enumerate(cols_list):
         col_str = str(col).strip()
         q_num_str = extract_qnum(col_str)
         if not q_num_str:
-            continue
+            # 兼容：问卷星导出里，部分“多选题（限选N个）”的第一列可能不带题号前缀，
+            # 但紧挨着后面会出现诸如 `4(选项...)` 这种可解析题号的列。
+            # 若当前列含“限选/最多选”，则归并到“后续最近能解析出题号的那一组”。
+            if limit_multi_pat.search(col_str):
+                next_q_num = None
+                for j in range(idx + 1, len(cols_list)):
+                    qn = extract_qnum(str(cols_list[j]).strip())
+                    if qn:
+                        next_q_num = qn
+                        break
+                if next_q_num:
+                    q_num_str = next_q_num
+                else:
+                    continue
+            else:
+                continue
         try:
             q_num = int(q_num_str)
         except ValueError:

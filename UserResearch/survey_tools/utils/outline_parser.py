@@ -120,7 +120,8 @@ def parse_outline_docx(source: Union[str, Path, bytes]) -> Dict[int, dict]:
             q["branching"] = line
             continue
 
-        if re.fullmatch(r"[_\s]+", line):
+        # 跳过“____”或“____)”这类换行残片，避免被当成独立选项
+        if re.fullmatch(r"[\s_＿()（）]+", line):
             continue
 
         if "矩阵" in current_type:
@@ -221,7 +222,7 @@ def parse_outline_txt(source: Union[str, Path, bytes]) -> Dict[int, dict]:
         if current_type in IGNORE_TYPES:
             continue
 
-        if re.fullmatch(r"[_\s]+", line):
+        if re.fullmatch(r"[\s_＿()（）]+", line):
             continue
 
         q = questions[current_q]

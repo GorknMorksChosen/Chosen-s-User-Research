@@ -1417,7 +1417,9 @@ def build_question_specs(
                 if not cols:
                     cols = _v13_cols_for_qnum(original_df, q_num_str, want_colon=None)
                 if cols:
-                    option_order = list(dict.fromkeys([get_option_label(c) for c in cols]))
+                    labels = [get_option_label(c) for c in cols]
+                    labels = [lbl for lbl in labels if str(lbl).strip()]
+                    option_order = list(dict.fromkeys(labels))
             elif q_type in ("矩阵单选", "矩阵评分"):
                 cols = _v13_new_format_cols(original_df, q_num_str, want_colon=True)
                 if cols:
@@ -1494,9 +1496,12 @@ def run_quant_cross_engine(
             if total == 0:
                 continue
             for col in option_cols:
+                option_label = get_option_label(col)
+                # 跳过“____)”这类填空附属残片列，避免污染多选选项文本与统计结果
+                if not str(option_label).strip():
+                    continue
                 mentions = count_mentions(group[col])
                 ratio = mentions / total if total > 0 else 0
-                option_label = get_option_label(col)
                 records.append(
                     {
                         "题目": prefix,
@@ -1570,6 +1575,7 @@ def run_quant_cross_engine(
             if not cols:
                 cols = _v13_cols_for_qnum(df, q_num_str, want_colon=None)
             cols = [c for c in cols if ok_col(c)]
+            cols = [c for c in cols if str(get_option_label(c)).strip()]
             if not cols:
                 continue
             prefix = get_prefix(cols[0])

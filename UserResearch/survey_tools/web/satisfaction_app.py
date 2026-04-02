@@ -7,6 +7,7 @@ import matplotlib.pyplot as plt
 from io import BytesIO
 from survey_tools.core.advanced_modeling import GameExperienceAnalyzer
 from survey_tools.utils.io import read_table_auto, ExportBundle, export_xlsx
+from survey_tools.utils.download_filename import safe_download_filename
 from survey_tools.utils.wjx_header import normalize_wjx_headers
 from statsmodels.stats.outliers_influence import variance_inflation_factor
 import statsmodels.api as sm
@@ -295,6 +296,9 @@ def render_regression_module(df):
 
         with col_export:
             st.subheader("导出报告")
+            if "sat_export_filename" not in st.session_state:
+                st.session_state.sat_export_filename = "满意度归因诊断报告.xlsx"
+            st.text_input("下载文件名（可修改）", key="sat_export_filename")
             sheet_诊断 = st.checkbox("统计诊断汇总", value=True, key="exp_diag")
             sheet_健康度 = st.checkbox("模型健康度", value=True, key="exp_health")
             sheet_摘要 = st.checkbox("自动摘要", value=True, key="exp_summary")
@@ -310,7 +314,16 @@ def render_regression_module(df):
                 bundle = ExportBundle(workbook_name="满意度归因诊断报告", sheets=sheets_list)
                 output = BytesIO()
                 export_xlsx(bundle, output)
-                st.download_button("📥 下载所选 Excel 报告", data=output.getvalue(), file_name="满意度归因诊断报告.xlsx", key="sat_export_dl")
+                _sat_fn = safe_download_filename(
+                    st.session_state.get("sat_export_filename", "满意度归因诊断报告.xlsx"),
+                    fallback="满意度归因诊断报告.xlsx",
+                )
+                st.download_button(
+                    "📥 下载所选 Excel 报告",
+                    data=output.getvalue(),
+                    file_name=_sat_fn,
+                    key="sat_export_dl",
+                )
             else:
                 st.caption("请至少勾选一个 sheet 再下载。")
 

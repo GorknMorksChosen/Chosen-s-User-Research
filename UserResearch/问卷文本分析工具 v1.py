@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 from survey_tools.utils.io import read_table_auto
+from survey_tools.utils.download_filename import safe_download_filename
 from survey_tools.utils.wjx_header import normalize_wjx_headers
 import os
 import json
@@ -599,6 +600,8 @@ def init_session_state():
         st.session_state.export_data_bytes = None
     if "export_data_name" not in st.session_state:
         st.session_state.export_data_name = ""
+    if "export_data_seq" not in st.session_state:
+        st.session_state.export_data_seq = 0
     if "parsed_outline" not in st.session_state:
         st.session_state.parsed_outline = None
     if "column_type_map" not in st.session_state:
@@ -2292,14 +2295,27 @@ if st.session_state.analyzed_df is not None:
             )
             st.session_state.export_data_bytes = export_data
             st.session_state.export_data_name = "analyzed_game_data_with_report_and_ppt.xlsx"
+            st.session_state.export_data_seq = st.session_state.get("export_data_seq", 0) + 1
             st.success("导出文件已生成，可点击下方按钮下载。")
 
     if st.session_state.get("export_data_bytes"):
+        _ex_suggested = st.session_state.get(
+            "export_data_name", "analyzed_game_data_with_report_and_ppt.xlsx"
+        )
+        _ex_seq = st.session_state.get("export_data_seq", 0)
+        if _ex_seq != st.session_state.get("export_data_fn_bound_seq", -1):
+            st.session_state["export_data_dl_filename"] = _ex_suggested
+            st.session_state["export_data_fn_bound_seq"] = _ex_seq
+        st.text_input("下载文件名（可修改）", key="export_data_dl_filename")
+        _ex_fn = safe_download_filename(
+            st.session_state.get("export_data_dl_filename", _ex_suggested),
+            fallback=_ex_suggested,
+        )
         st.download_button(
             label="📥 导出明细、报告与 PPT 大纲 (Excel)",
             data=st.session_state.export_data_bytes,
-            file_name=st.session_state.get("export_data_name", "analyzed_game_data_with_report_and_ppt.xlsx"),
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            file_name=_ex_fn,
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         )
 
 # --- 7. 无数据时的提示 ---

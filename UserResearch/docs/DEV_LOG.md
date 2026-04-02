@@ -8,6 +8,47 @@
 
 ---
 
+## 📅 2026-04-02（最新）
+
+### Quant/Web 与 v1.4（桌面版）稳定性修复批次
+
+**涉及文件**：
+- `survey_tools/web/quant_app.py`
+- `survey_tools/web/satisfaction_app.py`
+- `survey_tools/web/cluster_app.py`
+- `survey_tools/web/pipeline_app.py`
+- `问卷文本分析工具 v1.py`
+- `player_profiling_tags.py`
+- `game_analyst.py`
+- `survey_tools/utils/download_filename.py`（新增）
+- `survey_tools/core/question_type.py`
+- `survey_tools/core/quant.py`
+- `survey_tools/utils/outline_parser.py`
+- `问卷数表分析工具 v1.4.py`（新增）
+- `README.md`
+- `docs/DEV_LOG.md`
+
+**本轮落地内容（Web 工具）**：
+- **下载文件名可编辑**：Quant / 满意度 / 分群 / Pipeline / 文本 / 玩家画像 / game_analyst 的下载按钮均支持“手动改文件名”后再下载；新增 `safe_download_filename` 统一清理非法字符并补齐扩展名。
+- **Quant 高级统计支持批量分析**：单选组间、评分组间、组内差异相关模块由“单题单跑”改为“多选 + 默认全选可分析题目”，减少重复点击。
+- **问卷星多选识别补强**：
+  - 题干仅含“限选 N 个”时也可推断为多选题；
+  - `parse_columns_for_questions` 支持将“无题号但含限选提示”的首列归并到后续最近题号，避免首列信息丢失；
+  - 选项抽取对“限选提示 + 首个选项同列”“____) 换行残片”做清洗与过滤，避免导出出现污染选项。
+
+**本轮落地内容（桌面版 `问卷数表分析工具 v1.4.py`）**：
+- **题号匹配统一改造**：新增 `get_question_columns`，单选/评分/多选/填空/矩阵转换/组内分析等环节不再硬依赖 `Qx.` 前缀，兼容 `x、` / `x(` 等问卷星列名。
+- **组间汇总可见性修复**：在「组间显著性差异分析」Sheet 顶部新增“组间总体检验汇总”（题号/题型/检验类型/p 值/效应量/显著组对），避免评分题/多选题“已计算但不可见”。
+- **多选选项映射对齐修复**：新增 `normalize_multi_option_label`，让“预填充顺序”和“实际分析映射”使用同一选项清洗规则，修复选项错配/退化问题。
+- **新增大纲上传预标记能力**：桌面版分析页新增“问卷大纲 + 来源（问卷星/腾讯）”入口，可在“手动标记题型”弹窗中按大纲预填默认题型，支持二次微调。
+
+**验证**：
+- `python -m py_compile survey_tools/web/quant_app.py` -> 通过
+- `python -m py_compile survey_tools/core/question_type.py` -> 通过
+- `python -m py_compile survey_tools/core/quant.py` -> 通过
+- `python -m py_compile survey_tools/utils/outline_parser.py` -> 通过
+- `python -m py_compile "问卷数表分析工具 v1.4.py"` -> 通过
+
 ## 📅 2026-03-30（最新）
 
 ### 玩家画像多维打标签工具（专项）首版落地与闭环增强

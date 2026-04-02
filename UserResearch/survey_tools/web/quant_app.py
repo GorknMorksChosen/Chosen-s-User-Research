@@ -11,6 +11,7 @@ from survey_tools.utils.io import (
     ExportBundle,
     export_xlsx,
 )
+from survey_tools.utils.download_filename import safe_download_filename
 from survey_tools.utils.wjx_header import normalize_wjx_headers
 from survey_tools.core.quant import (
     calculate_rating_metrics,
@@ -68,6 +69,12 @@ def init_session_state():
         st.session_state.debug_log_enabled = False
     if "debug_log_lines" not in st.session_state:
         st.session_state.debug_log_lines = []
+    if "quant_debug_dl_name" not in st.session_state:
+        st.session_state.quant_debug_dl_name = "quant_debug.log"
+    if "export_cross_seq" not in st.session_state:
+        st.session_state.export_cross_seq = 0
+    if "export_ranking_seq" not in st.session_state:
+        st.session_state.export_ranking_seq = 0
     if "combined_group_recipes" not in st.session_state:
         # [{"name": str, "cols": [str, ...]}]
         st.session_state.combined_group_recipes = []
@@ -411,10 +418,15 @@ def main():
                 st.session_state.debug_log_lines = []
         with col_b:
             log_text = "\n".join(st.session_state.debug_log_lines)
+            st.text_input("日志文件名（可修改）", key="quant_debug_dl_name")
+            _log_fn = safe_download_filename(
+                st.session_state.get("quant_debug_dl_name", "quant_debug.log"),
+                fallback="quant_debug.log",
+            )
             st.download_button(
                 "下载 log",
                 data=log_text.encode("utf-8"),
-                file_name="quant_debug.log",
+                file_name=_log_fn,
                 mime="text/plain",
                 key="debug_log_download",
             )
@@ -1163,6 +1175,7 @@ def main():
                     )
                     st.session_state.export_cross_buffer = buf
                     st.session_state.export_cross_name = "问卷定量交叉分析结果.xlsx"
+                    st.session_state.export_cross_seq = st.session_state.get("export_cross_seq", 0) + 1
                     debug_log("导出 Playtest 同版式 Excel 成功")
                     st.rerun()
                 except Exception as e:
@@ -1217,15 +1230,28 @@ def main():
                     export_xlsx(bundle, buffer)
                     st.session_state.export_cross_buffer = buffer.getvalue()
                     st.session_state.export_cross_name = "问卷定量交叉分析_简易透视.xlsx"
+                    st.session_state.export_cross_seq = st.session_state.get("export_cross_seq", 0) + 1
                     st.rerun()
                 except Exception as e:
                     debug_log(f"导出简易 Excel 失败 | error={repr(e)}")
                     st.error(f"导出失败: {e}")
         if st.session_state.get("export_cross_buffer") is not None:
+            _cross_suggested = st.session_state.get(
+                "export_cross_name", "问卷定量交叉分析结果.xlsx"
+            )
+            _cross_seq = st.session_state.get("export_cross_seq", 0)
+            if _cross_seq != st.session_state.get("export_cross_fn_bound_seq", -1):
+                st.session_state["export_cross_dl_filename"] = _cross_suggested
+                st.session_state["export_cross_fn_bound_seq"] = _cross_seq
+            st.text_input("下载文件名（可修改）", key="export_cross_dl_filename")
+            _cross_fn = safe_download_filename(
+                st.session_state.get("export_cross_dl_filename", _cross_suggested),
+                fallback=_cross_suggested,
+            )
             st.download_button(
                 label="下载交叉统计结果 Excel",
                 data=st.session_state["export_cross_buffer"],
-                file_name=st.session_state.get("export_cross_name", "问卷定量交叉分析结果.xlsx"),
+                file_name=_cross_fn,
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 key="quant_export_download",
             )
@@ -1268,32 +1294,42 @@ def main():
                 if not single_cols:
                     st.info("当前题型标记中尚未设置任何单选题列。请在“题型微调”中将相应列标记为“单选”。")
                 else:
-                    single_col = st.selectbox(
-                        "选择需要进行组间差异检验的单选题列",
+                    selected_single_cols = st.multiselect(
+                        "选择需要进行组间差异检验的单选题列（可多选）",
                         options=single_cols,
+                        default=single_cols,
+                        key="single_between_cols_multi",
                     )
                     if st.button("运行单选题组间差异检验", key="run_single_choice_test"):
-                        test_res = run_group_difference_test(
-                            df, core_segment_col, single_col, "单选", alpha=float(sig_alpha)
-                        )
-                        overall = test_res.get("overall") or {}
-                        p_val = overall.get("p_value")
-                        effect = overall.get("effect_size")
-                        effect_comment = interpret_effect_size("Cramer's V", effect)
-                        st.subheader("单选题组间差异总体检验结果")
-                        st.write(
-                            {
-                                "检验类型": overall.get("test"),
-                                "统计量": overall.get("stat"),
-                                "p值": p_val,
-                                "效应量(Cramer's V)": effect,
-                                "效应量解释": effect_comment,
-                            }
-                        )
-                        if p_val is not None and pd.notna(p_val) and p_val < sig_alpha:
-                            st.error(f"该单选题在不同分组之间存在显著差异（p < {sig_alpha:.3f}）。")
+                        if not selected_single_cols:
+                            st.warning("请至少选择 1 个单选题。")
                         else:
-                            st.info(f"未检测到该单选题在不同分组之间的显著差异（p ≥ {sig_alpha:.3f}）。")
+                            rows = []
+                            for single_col in selected_single_cols:
+                                test_res = run_group_difference_test(
+                                    df, core_segment_col, single_col, "单选", alpha=float(sig_alpha)
+                                )
+                                overall = test_res.get("overall") or {}
+                                p_val = overall.get("p_value")
+                                effect = overall.get("effect_size")
+                                effect_comment = interpret_effect_size("Cramer's V", effect)
+                                rows.append(
+                                    {
+                                        "题目": single_col,
+                                        "检验类型": overall.get("test"),
+                                        "统计量": overall.get("stat"),
+                                        "p值": p_val,
+                                        "效应量(Cramer's V)": effect,
+                                        "效应量解释": effect_comment,
+                                        "结论": (
+                                            f"显著（p < {sig_alpha:.3f}）"
+                                            if p_val is not None and pd.notna(p_val) and p_val < sig_alpha
+                                            else f"不显著（p ≥ {sig_alpha:.3f}）"
+                                        ),
+                                    }
+                                )
+                            st.subheader("单选题组间差异总体检验结果（批量）")
+                            st.dataframe(pd.DataFrame(rows), use_container_width=True)
         with tab_rating:
             if core_segment_col is None:
                 st.info("请先在上方选择核心分组列，并完成一次基础交叉分析。")
@@ -1309,78 +1345,48 @@ def main():
                         "当前题型标记中尚未设置任何评分题或 NPS 题。请在「题型微调」中将相应列标记为「评分」或「NPS」。"
                     )
                 else:
-                    rating_col = st.selectbox(
-                        "选择需要进行组间差异检验的评分题列",
+                    selected_rating_cols = st.multiselect(
+                        "选择需要进行组间差异检验的评分题列（可多选）",
                         options=rating_cols,
+                        default=rating_cols,
+                        key="rating_between_cols_multi",
                     )
                     if st.button("运行评分题组间差异检验", key="run_rating_test"):
-                        metrics_df = calculate_rating_metrics(
-                            df, rating_col, core_segment_col
-                        )
-                        st.subheader("评分题基础统计指标")
-                        st.dataframe(metrics_df, use_container_width=True)
-                        test_res = run_group_difference_test(
-                            df, core_segment_col, rating_col, "评分", alpha=float(sig_alpha)
-                        )
-                        overall = test_res.get("overall") or {}
-                        pairwise = test_res.get("pairwise")
-                        p_val = overall.get("p_value")
-                        st.subheader("组间差异总体检验结果")
-                        st.write(
-                            {
-                                "检验类型": overall.get("test"),
-                                "统计量": overall.get("stat"),
-                                "p值": p_val,
-                                "效应量(η²)": overall.get("effect_size"),
-                            }
-                        )
-                        if p_val is not None and pd.notna(p_val) and p_val < sig_alpha:
-                            st.error(f"该评分题在不同分组之间存在显著差异（p < {sig_alpha:.3f}）。")
+                        if not selected_rating_cols:
+                            st.warning("请至少选择 1 个评分/NPS 题。")
                         else:
-                            st.info(f"未检测到显著的组间差异（p ≥ {sig_alpha:.3f}）。")
-                        if isinstance(pairwise, pd.DataFrame) and not pairwise.empty:
-                            st.subheader("两两组间差异结果")
-                            st.dataframe(pairwise, use_container_width=True)
-                            means = (
-                                pd.to_numeric(df[rating_col], errors="coerce")
-                                .groupby(df[core_segment_col])
-                                .mean()
-                            )
-                            conclusions = []
-                            seen_pairs = set()
-                            for _, row in pairwise.iterrows():
-                                g1 = row.get("group1")
-                                g2 = row.get("group2")
-                                pv = row.get("p_value")
-                                if g1 not in means or g2 not in means:
-                                    continue
-                                if pv is None or pd.isna(pv) or pv >= sig_alpha:
-                                    continue
-                                key_pair = tuple(sorted([str(g1), str(g2)]))
-                                if key_pair in seen_pairs:
-                                    continue
-                                seen_pairs.add(key_pair)
-                                m1 = means[g1]
-                                m2 = means[g2]
-                                if pd.isna(m1) or pd.isna(m2):
-                                    continue
-                                if m1 > m2:
-                                    conclusions.append(
-                                        f"[{g1}] 在「{rating_col}」上的得分显著高于 [{g2}]"
+                            summary_rows = []
+                            for rating_col in selected_rating_cols:
+                                test_res = run_group_difference_test(
+                                    df, core_segment_col, rating_col, "评分", alpha=float(sig_alpha)
+                                )
+                                overall = test_res.get("overall") or {}
+                                p_val = overall.get("p_value")
+                                summary_rows.append(
+                                    {
+                                        "题目": rating_col,
+                                        "检验类型": overall.get("test"),
+                                        "统计量": overall.get("stat"),
+                                        "p值": p_val,
+                                        "效应量(η²)": overall.get("effect_size"),
+                                        "结论": (
+                                            f"显著（p < {sig_alpha:.3f}）"
+                                            if p_val is not None and pd.notna(p_val) and p_val < sig_alpha
+                                            else f"不显著（p ≥ {sig_alpha:.3f}）"
+                                        ),
+                                    }
+                                )
+
+                            st.subheader("评分题组间差异总体检验结果（批量）")
+                            st.dataframe(pd.DataFrame(summary_rows), use_container_width=True)
+
+                            st.subheader("评分题基础统计指标（批量）")
+                            for rating_col in selected_rating_cols:
+                                with st.expander(f"题目：{rating_col}", expanded=False):
+                                    metrics_df = calculate_rating_metrics(
+                                        df, rating_col, core_segment_col
                                     )
-                                elif m2 > m1:
-                                    conclusions.append(
-                                        f"[{g2}] 在「{rating_col}」上的得分显著高于 [{g1}]"
-                                    )
-                            if conclusions:
-                                st.subheader("一句话结论")
-                                st.write("；".join(conclusions[:5]))
-                            else:
-                                if p_val is not None and pd.notna(p_val) and p_val < sig_alpha:
-                                    st.subheader("一句话结论")
-                                    st.write(
-                                        f"在评分题「{rating_col}」上，不同分组之间整体存在显著差异，但未提取出稳定的两两差异结论。"
-                                    )
+                                    st.dataframe(metrics_df, use_container_width=True)
         with tab_within:
             type_df = st.session_state.column_type_df
             if type_df is None:
@@ -1406,34 +1412,48 @@ def main():
                         "当前没有检测到可用于组内差异分析的多选/矩阵单选题。请在“题型微调”中将相关列标记为“多选”或“矩阵”。"
                     )
                 else:
-                    chosen_prefix = st.selectbox(
-                        "选择需要进行组内显著性分析的多选/矩阵单选题（按前缀识别）",
+                    selected_prefixes = st.multiselect(
+                        "选择需要进行组内显著性分析的多选/矩阵单选题（按前缀识别，可多选）",
                         options=multi_prefix_options,
+                        default=multi_prefix_options,
+                        key="within_multi_prefixes",
                     )
-                    option_cols = prefix_map_multi.get(chosen_prefix, [])
-                    st.write(f"当前题目包含的选项列：{option_cols}")
+                    if selected_prefixes:
+                        st.caption(f"已选题目数：{len(selected_prefixes)}（默认全选）")
                     if st.button(
                         "运行多选/矩阵单选题组内显著性分析", key="run_within_multi_choice"
                     ):
-                        test_df = run_within_group_multi_choice(df, option_cols)
-                        if test_df is None or test_df.empty:
-                            st.warning("样本量不足或数据不完整，未能计算组内显著性差异。")
+                        if not selected_prefixes:
+                            st.warning("请至少选择 1 道题。")
                         else:
-                            st.dataframe(test_df, use_container_width=True)
-                            sig_pairs = test_df[
-                                (test_df["p_value"].notna())
-                                & (test_df["p_value"] < sig_alpha)
-                            ]
-                            if not sig_pairs.empty:
-                                st.subheader(f"显著差异选项对（p < {sig_alpha:.3f}）")
-                                lines = []
-                                for _, row in sig_pairs.iterrows():
-                                    lines.append(
-                                        f"选项「{row['option1']}」与「{row['option2']}」在被选择的概率上存在显著差异（p={row['p_value']:.3f}，g={row['effect_size_g']:.2f}）。"
-                                    )
-                                st.write("；".join(lines))
+                            all_within_rows = []
+                            for chosen_prefix in selected_prefixes:
+                                option_cols = prefix_map_multi.get(chosen_prefix, [])
+                                test_df = run_within_group_multi_choice(df, option_cols)
+                                if test_df is None or test_df.empty:
+                                    continue
+                                temp = test_df.copy()
+                                temp.insert(0, "前缀", chosen_prefix)
+                                all_within_rows.append(temp)
+                            if not all_within_rows:
+                                st.warning("样本量不足或数据不完整，未能计算组内显著性差异。")
                             else:
-                                st.info(f"在该题内部，各选项之间未检测到显著差异（p ≥ {sig_alpha:.3f}）。")
+                                merged_within_df = pd.concat(all_within_rows, ignore_index=True)
+                                st.dataframe(merged_within_df, use_container_width=True)
+                                sig_pairs = merged_within_df[
+                                    (merged_within_df["p_value"].notna())
+                                    & (merged_within_df["p_value"] < sig_alpha)
+                                ]
+                                if not sig_pairs.empty:
+                                    st.subheader(f"显著差异选项对（p < {sig_alpha:.3f}）")
+                                    lines = []
+                                    for _, row in sig_pairs.iterrows():
+                                        lines.append(
+                                            f"[{row['前缀']}] 选项「{row['option1']}」与「{row['option2']}」存在显著差异（p={row['p_value']:.3f}，g={row['effect_size_g']:.2f}）。"
+                                        )
+                                    st.write("；".join(lines[:20]))
+                                else:
+                                    st.info(f"在所选题目内部，各选项之间未检测到显著差异（p ≥ {sig_alpha:.3f}）。")
 
                 st.subheader("多选 / 矩阵单选题：组间差异概览（卡方 / Fisher）")
                 if type_df is not None:
@@ -1455,15 +1475,14 @@ def main():
                         "当前没有检测到可用于组间差异分析的多选/矩阵单选题。请在“题型微调”中将相关列标记为“多选”或“矩阵”。"
                     )
                 else:
-                    chosen_prefix_between = st.selectbox(
-                        "选择需要进行组间差异分析的多选/矩阵单选题（按前缀识别）",
+                    selected_prefixes_between = st.multiselect(
+                        "选择需要进行组间差异分析的多选/矩阵单选题（按前缀识别，可多选）",
                         options=multi_prefix_options_between,
-                        key="between_multi_prefix",
+                        default=multi_prefix_options_between,
+                        key="between_multi_prefixes",
                     )
-                    option_cols_between = prefix_map_multi_between.get(
-                        chosen_prefix_between, []
-                    )
-                    st.write(f"当前题目包含的选项列：{option_cols_between}")
+                    if selected_prefixes_between:
+                        st.caption(f"已选题目数：{len(selected_prefixes_between)}（默认全选）")
 
                     if st.button(
                         "运行多选/矩阵单选题组间差异分析", key="run_between_multi_choice"
@@ -1472,35 +1491,39 @@ def main():
                             st.warning("请先在上方选择核心分组列。")
                         else:
                             rows = []
-                            for col in option_cols_between:
-                                tmp = df[[core_segment_col, col]].copy()
-                                tmp[col] = tmp[col].apply(
-                                    lambda v: "提及"
-                                    if (
-                                        not pd.isna(v)
-                                        and str(v).strip().lower()
-                                        not in ("", "0", "0.0", "nan", "none", "na", "n/a", "未选", "否")
+                            for chosen_prefix_between in selected_prefixes_between:
+                                option_cols_between = prefix_map_multi_between.get(
+                                    chosen_prefix_between, []
+                                )
+                                for col in option_cols_between:
+                                    tmp = df[[core_segment_col, col]].copy()
+                                    tmp[col] = tmp[col].apply(
+                                        lambda v: "提及"
+                                        if (
+                                            not pd.isna(v)
+                                            and str(v).strip().lower()
+                                            not in ("", "0", "0.0", "nan", "none", "na", "n/a", "未选", "否")
+                                        )
+                                        else "未提及"
                                     )
-                                    else "未提及"
-                                )
-                                # H1: 多选类型需传列表；列已预处理为"提及"/"未提及"，用单选检验更准确
-                                res = run_group_difference_test(
-                                    tmp, core_segment_col, col, "单选", alpha=float(sig_alpha)
-                                )
-                                overall = res.get("overall") or {}
-                                p_val = overall.get("p_value")
-                                eff = overall.get("effect_size")
-                                eff_comment = interpret_effect_size("Cramer's V", eff)
-                                rows.append(
-                                    {
-                                        "前缀": chosen_prefix_between,
-                                        "选项列": col,
-                                        "检验类型": overall.get("test"),
-                                        "p值": p_val,
-                                        "效应量(Cramer's V)": eff,
-                                        "效应量解释": eff_comment,
-                                    }
-                                )
+                                    # H1: 多选类型需传列表；列已预处理为"提及"/"未提及"，用单选检验更准确
+                                    res = run_group_difference_test(
+                                        tmp, core_segment_col, col, "单选", alpha=float(sig_alpha)
+                                    )
+                                    overall = res.get("overall") or {}
+                                    p_val = overall.get("p_value")
+                                    eff = overall.get("effect_size")
+                                    eff_comment = interpret_effect_size("Cramer's V", eff)
+                                    rows.append(
+                                        {
+                                            "前缀": chosen_prefix_between,
+                                            "选项列": col,
+                                            "检验类型": overall.get("test"),
+                                            "p值": p_val,
+                                            "效应量(Cramer's V)": eff,
+                                            "效应量解释": eff_comment,
+                                        }
+                                    )
                             if rows:
                                 res_df = pd.DataFrame(rows)
                                 st.subheader("多选 / 矩阵单选题：各选项组间差异结果")
@@ -1526,59 +1549,44 @@ def main():
                         "当前没有检测到可用于组内差异分析的矩阵评分题。请在“题型微调”中将相关列标记为“矩阵”。"
                     )
                 else:
-                    chosen_matrix_prefix = st.selectbox(
-                        "选择需要进行组内显著性分析的矩阵评分题（按前缀识别）",
+                    selected_matrix_prefixes = st.multiselect(
+                        "选择需要进行组内显著性分析的矩阵评分题（按前缀识别，可多选）",
                         options=matrix_prefix_options,
+                        default=matrix_prefix_options,
+                        key="within_matrix_prefixes",
                     )
-                    value_cols = prefix_map_matrix.get(chosen_matrix_prefix, [])
-                    st.write(f"当前矩阵评分题包含的子项列：{value_cols}")
                     if st.button(
                         "运行矩阵评分题组内显著性分析", key="run_within_matrix_rating"
                     ):
-                        res = run_within_group_matrix_rating(df, value_cols)
-                        overall = res.get("overall") or {}
-                        pairwise = res.get("pairwise")
-                        st.subheader("总体组内差异检验（Friedman）")
-                        st.write(
-                            {
-                                "检验类型": overall.get("test"),
-                                "统计量": overall.get("stat"),
-                                "p值": overall.get("p_value"),
-                            }
-                        )
-                        if (
-                            overall.get("p_value") is not None
-                            and pd.notna(overall.get("p_value"))
-                            and overall.get("p_value") < sig_alpha
-                        ):
-                            st.error(f"该矩阵评分题的各子项之间整体存在显著差异（p < {sig_alpha:.3f}）。")
+                        if not selected_matrix_prefixes:
+                            st.warning("请至少选择 1 道矩阵评分题。")
                         else:
-                            st.info(f"未检测到矩阵子项之间显著的总体差异（p ≥ {sig_alpha:.3f}）。")
-                        if isinstance(pairwise, pd.DataFrame) and not pairwise.empty:
-                            st.subheader("两两子项对比结果（Wilcoxon）")
-                            st.dataframe(pairwise, use_container_width=True)
-                            sig_pairs = pairwise[
-                                (pairwise["p_value"].notna())
-                                & (pairwise["p_value"] < sig_alpha)
-                            ]
-                            if not sig_pairs.empty:
-                                st.subheader("一句话结论示例")
-                                lines = []
-                                for _, row in sig_pairs.iterrows():
-                                    lines.append(
-                                        f"子项「{row['item1']}」与「{row['item2']}」的评分分布存在显著差异（p={row['p_value']:.3f}，d={row['effect_size_d']:.2f}）。"
-                                    )
-                                st.write("；".join(lines[:5]))
-                            else:
-                                if (
-                                    overall.get("p_value") is not None
-                                    and pd.notna(overall.get("p_value"))
-                                    and overall.get("p_value") < sig_alpha
-                                ):
-                                    st.subheader("一句话结论示例")
-                                    st.write(
-                                        f"在矩阵评分题「{chosen_matrix_prefix}」中，各子项评分分布整体存在显著差异，但未提取出稳定的两两差异结论。"
-                                    )
+                            overall_rows = []
+                            pairwise_blocks = []
+                            for chosen_matrix_prefix in selected_matrix_prefixes:
+                                value_cols = prefix_map_matrix.get(chosen_matrix_prefix, [])
+                                res = run_within_group_matrix_rating(df, value_cols)
+                                overall = res.get("overall") or {}
+                                overall_rows.append(
+                                    {
+                                        "前缀": chosen_matrix_prefix,
+                                        "检验类型": overall.get("test"),
+                                        "统计量": overall.get("stat"),
+                                        "p值": overall.get("p_value"),
+                                    }
+                                )
+                                pairwise = res.get("pairwise")
+                                if isinstance(pairwise, pd.DataFrame) and not pairwise.empty:
+                                    temp = pairwise.copy()
+                                    temp.insert(0, "前缀", chosen_matrix_prefix)
+                                    pairwise_blocks.append(temp)
+
+                            st.subheader("总体组内差异检验（Friedman，批量）")
+                            st.dataframe(pd.DataFrame(overall_rows), use_container_width=True)
+                            if pairwise_blocks:
+                                st.subheader("两两子项对比结果（Wilcoxon，批量）")
+                                pairwise_all = pd.concat(pairwise_blocks, ignore_index=True)
+                                st.dataframe(pairwise_all, use_container_width=True)
         with tab_ranking:
             type_df = st.session_state.column_type_df
             ranking_cols = (
@@ -1713,12 +1721,27 @@ def main():
                         buffer.seek(0)
                         st.session_state["export_ranking_buffer"] = buffer.getvalue()
                         st.session_state["export_ranking_name"] = "排序题深度洞察报告.xlsx"
+                        st.session_state.export_ranking_seq = (
+                            st.session_state.get("export_ranking_seq", 0) + 1
+                        )
                         st.success("已准备导出，请点击下方「下载 Excel」。")
                     if st.session_state.get("export_ranking_buffer") is not None:
+                        _rank_suggested = st.session_state.get(
+                            "export_ranking_name", "排序题深度洞察报告.xlsx"
+                        )
+                        _rank_seq = st.session_state.get("export_ranking_seq", 0)
+                        if _rank_seq != st.session_state.get("export_ranking_fn_bound_seq", -1):
+                            st.session_state["export_ranking_dl_filename"] = _rank_suggested
+                            st.session_state["export_ranking_fn_bound_seq"] = _rank_seq
+                        st.text_input("下载文件名（可修改）", key="export_ranking_dl_filename")
+                        _rank_fn = safe_download_filename(
+                            st.session_state.get("export_ranking_dl_filename", _rank_suggested),
+                            fallback=_rank_suggested,
+                        )
                         st.download_button(
                             label="📥 下载 Excel",
                             data=st.session_state["export_ranking_buffer"],
-                            file_name=st.session_state.get("export_ranking_name", "排序题深度洞察报告.xlsx"),
+                            file_name=_rank_fn,
                             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                             key="download_ranking_export",
                         )

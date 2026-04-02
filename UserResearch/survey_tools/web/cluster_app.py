@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 from survey_tools.utils.io import read_table_auto
+from survey_tools.utils.download_filename import safe_download_filename
 from survey_tools.utils.wjx_header import normalize_wjx_headers
 import plotly.express as px
 import plotly.graph_objects as go
@@ -517,12 +518,19 @@ def main():
         df_final_export['Cluster Name'] = df_final_export['Cluster'].map(st.session_state.clustering_results['names'])
         
         # L8: 按钮标签写「Excel」但实际输出 CSV，已修正为如实标注
+        if "cluster_csv_filename" not in st.session_state:
+            st.session_state.cluster_csv_filename = "player_segmentation_result.csv"
+        st.text_input("下载文件名（可修改）", key="cluster_csv_filename")
+        _csv_fn = safe_download_filename(
+            st.session_state.get("cluster_csv_filename", "player_segmentation_result.csv"),
+            fallback="player_segmentation_result.csv",
+        )
         st.download_button(
             label="📥 导出最终结果 (CSV)",
-            data=df_final_export.to_csv(index=False).encode('utf-8_sig'),
-            file_name="player_segmentation_result.csv",
+            data=df_final_export.to_csv(index=False).encode("utf-8_sig"),
+            file_name=_csv_fn,
             mime="text/csv",
-            type="primary"
+            type="primary",
         )
 
 if __name__ == "__main__":

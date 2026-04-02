@@ -30,6 +30,7 @@ from survey_tools.core.factor_compat import (
 from survey_tools.core.missing_strategy import apply_missing_strategy
 from survey_tools.core.advanced_modeling import GameExperienceAnalyzer
 from survey_tools.utils.io import read_table_auto
+from survey_tools.utils.download_filename import safe_download_filename
 from survey_tools.utils.wjx_header import normalize_wjx_headers
 
 # 版本兼容性处理将在具体函数中通过try-except方式处理
@@ -1328,11 +1329,18 @@ if uploaded_file:
             report_text += "--- 核心结论 ---\n"
             # 这里可以从之前的分析结果中提取更多文字
             
+            if "game_analyst_report_fn" not in st.session_state:
+                st.session_state.game_analyst_report_fn = "game_analysis_report.txt"
+            st.text_input("下载文件名（可修改）", key="game_analyst_report_fn")
+            _ga_fn = safe_download_filename(
+                st.session_state.get("game_analyst_report_fn", "game_analysis_report.txt"),
+                fallback="game_analysis_report.txt",
+            )
             st.download_button(
                 label="下载分析简报 (TXT格式)",
                 data=report_text,
-                file_name="game_analysis_report.txt",
-                mime="text/plain"
+                file_name=_ga_fn,
+                mime="text/plain",
             )
             
             st.info("💡 高级版可集成 python-docx 生成带图表的 Word 文档。")
