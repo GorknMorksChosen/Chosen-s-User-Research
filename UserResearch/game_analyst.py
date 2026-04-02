@@ -526,7 +526,11 @@ st.markdown("""
 """)
 
 # 1. 数据上传
-uploaded_file = st.sidebar.file_uploader("第一步：上传问卷数据（Excel/CSV/SAV）", type=["xlsx", "xls", "csv", "sav"])
+uploaded_file = st.sidebar.file_uploader(
+    "第一步：上传问卷数据（Excel/CSV/SAV）",
+    type=["xlsx", "xls", "csv", "sav"],
+    key="game_analyst_uploader",
+)
 
 # 显式刷新按钮：在不改变当前上传文件和已选参数的前提下，强制重算整个分析
 if st.sidebar.button("🔄 重新计算所有分析"):
@@ -534,21 +538,34 @@ if st.sidebar.button("🔄 重新计算所有分析"):
     st.rerun()
 
 if uploaded_file:
-    # 使用 session_state 存储清洗后的数据；换文件时按标识重新加载
-    file_id = (uploaded_file.name, getattr(uploaded_file, 'size', 0))
+    # 使用 session_state 存储清洗后的数据；换文件或切换 Sheet 时按标识重新加载
+    name = (uploaded_file.name or "").lower()
+    selected_sheet_name = None
+    if name.endswith(".xlsx") or name.endswith(".xls"):
+        xls = pd.ExcelFile(uploaded_file)
+        sheet_names = xls.sheet_names
+        current_sheet = st.session_state.get("game_analyst_sheet_name", sheet_names[0])
+        if current_sheet not in sheet_names:
+            current_sheet = sheet_names[0]
+        if len(sheet_names) > 1:
+            selected_sheet_name = st.sidebar.selectbox(
+                "选择工作表 (Sheet)",
+                sheet_names,
+                index=sheet_names.index(current_sheet),
+                key="game_analyst_sheet_selector",
+            )
+        else:
+            selected_sheet_name = sheet_names[0]
+        st.session_state.game_analyst_sheet_name = selected_sheet_name
+
+    file_id = (uploaded_file.name, getattr(uploaded_file, "size", 0), selected_sheet_name)
     if (
         'df_cleaned' not in st.session_state
         or st.session_state.get('uploaded_file_id') != file_id
     ):
         st.session_state.uploaded_file_id = file_id
-        name = (uploaded_file.name or "").lower()
         if name.endswith(".xlsx") or name.endswith(".xls"):
-            xls = pd.ExcelFile(uploaded_file)
-            sheet_names = xls.sheet_names
-            sheet_name = sheet_names[0]
-            if len(sheet_names) > 1:
-                sheet_name = st.sidebar.selectbox("选择工作表 (Sheet)", sheet_names, key="game_analyst_sheet_selector")
-            st.session_state.df_cleaned = read_table_auto(xls, sheet_name=sheet_name)
+            st.session_state.df_cleaned = read_table_auto(xls, sheet_name=selected_sheet_name or 0)
         else:
             st.session_state.df_cleaned = read_table_auto(uploaded_file)
         _df, _wjx_mod = normalize_wjx_headers(st.session_state.df_cleaned)

@@ -477,7 +477,11 @@ def main():
                 xls = pd.ExcelFile(uploaded_file)
                 sheet_names = xls.sheet_names
                 if len(sheet_names) > 1:
-                    sheet_name = st.selectbox("请选择要分析的工作表 (Sheet)", sheet_names)
+                    sheet_name = st.selectbox(
+                        "请选择要分析的工作表 (Sheet)",
+                        sheet_names,
+                        key="quant_sheet_selector",
+                    )
                 else:
                     sheet_name = sheet_names[0]
                 df = load_data(xls, sheet_name=sheet_name)

@@ -834,7 +834,11 @@ if uploaded_file:
             xls = pd.ExcelFile(uploaded_file)
             sheet_names = xls.sheet_names
             if len(sheet_names) > 1:
-                selected_sheet = st.selectbox("请选择要分析的工作表 (Sheet)", sheet_names)
+                selected_sheet = st.selectbox(
+                    "请选择要分析的工作表 (Sheet)",
+                    sheet_names,
+                    key="text_sheet_selector",
+                )
             else:
                 selected_sheet = sheet_names[0]
             df = read_table_auto(xls, sheet_name=selected_sheet)
