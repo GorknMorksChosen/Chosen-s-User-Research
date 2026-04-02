@@ -29,11 +29,72 @@ from survey_tools.core.factor_compat import (
 )
 from survey_tools.core.missing_strategy import apply_missing_strategy
 from survey_tools.core.advanced_modeling import GameExperienceAnalyzer
-from survey_tools.utils.io import read_table_auto
+from survey_tools.utils.io import read_table_auto, ExportBundle, export_xlsx
 from survey_tools.utils.download_filename import safe_download_filename
 from survey_tools.utils.wjx_header import normalize_wjx_headers
 
 # 版本兼容性处理将在具体函数中通过try-except方式处理
+
+
+def _ga_corr_matrix_for_export(cm: pd.DataFrame) -> pd.DataFrame:
+    out = cm.copy()
+    out.insert(0, "模块", out.index.astype(str))
+    return out.reset_index(drop=True)
+
+
+def _render_ga_unified_export_sidebar() -> None:
+    st.sidebar.divider()
+    st.sidebar.subheader("📦 一键整合导出")
+    st.sidebar.caption(
+        "汇总各 Tab 已生成的**数据表**为单个 Excel；图表请在页面查看。**请先在各 Tab 跑完分析**再下载。"
+    )
+    sheets: list[tuple[str, pd.DataFrame]] = []
+    if st.session_state.get("ga_export_corr") is not None:
+        sheets.append(("相关性矩阵", _ga_corr_matrix_for_export(st.session_state.ga_export_corr)))
+    pairs = st.session_state.get("ga_export_corr_pairs")
+    if isinstance(pairs, pd.DataFrame) and not pairs.empty:
+        sheets.append(("高相关模块对", pairs))
+    if st.session_state.get("ga_export_loadings") is not None:
+        sheets.append(("因子载荷", st.session_state.ga_export_loadings))
+    if st.session_state.get("ga_export_cluster_means") is not None:
+        sheets.append(("聚类_分群均值", st.session_state.ga_export_cluster_means))
+    if st.session_state.get("ga_export_cluster_counts") is not None:
+        sheets.append(("聚类_各群样本量", st.session_state.ga_export_cluster_counts))
+    if st.session_state.get("ga_export_cluster_detail") is not None:
+        sheets.append(("聚类_样本分群明细", st.session_state.ga_export_cluster_detail))
+    if st.session_state.get("ga_export_regression") is not None:
+        sheets.append(("多元回归诊断", st.session_state.ga_export_regression))
+    if st.session_state.get("ga_export_model_health") is not None:
+        sheets.append(("模型健康度", st.session_state.ga_export_model_health))
+    if st.session_state.get("ga_export_kano") is not None:
+        sheets.append(("Kano分析", st.session_state.ga_export_kano))
+    if st.session_state.get("ga_export_shap") is not None:
+        sheets.append(("SHAP重要性", st.session_state.ga_export_shap))
+    if st.session_state.get("ga_export_sem") is not None:
+        sheets.append(("路径分析SEM", st.session_state.ga_export_sem))
+
+    if not sheets:
+        st.sidebar.info("暂无已缓存的表格。请至少完成「相关性」等 Tab 中的计算。")
+        return
+
+    if "ga_unified_export_fn" not in st.session_state:
+        st.session_state.ga_unified_export_fn = "全链路归因_整合导出.xlsx"
+    st.sidebar.text_input("整合导出文件名", key="ga_unified_export_fn")
+    buf = io.BytesIO()
+    bundle = ExportBundle(workbook_name="全链路归因整合导出", sheets=sheets)
+    export_xlsx(bundle, buf)
+    _fn = safe_download_filename(
+        st.session_state.get("ga_unified_export_fn", "全链路归因_整合导出.xlsx"),
+        fallback="全链路归因_整合导出.xlsx",
+    )
+    st.sidebar.download_button(
+        label="📥 下载整合 Excel（多 Sheet）",
+        data=buf.getvalue(),
+        file_name=_fn,
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        key="ga_unified_export_dl",
+    )
+
 
 class LegacyGameExperienceAnalyzer:
     """
@@ -576,7 +637,8 @@ if uploaded_file:
     
     # 初始化分析器
     analyzer = GameExperienceAnalyzer(df)
-    
+    _render_ga_unified_export_sidebar()
+
     # 2. 参数选择 (整合至第一个 Tab)
     all_cols = df.columns.tolist()
     
@@ -665,7 +727,11 @@ if uploaded_file:
                 pairs_df = pd.DataFrame(high_pairs).sort_values(by="相关系数(Spearman)", ascending=False)
                 st.dataframe(pairs_df, use_container_width=True)
             else:
+                pairs_df = pd.DataFrame()
                 st.info("当前未发现绝对相关系数 ≥ 0.6 的模块对。")
+
+            st.session_state.ga_export_corr = corr_matrix.copy()
+            st.session_state.ga_export_corr_pairs = pairs_df.copy()
 
         # --- TAB 2: 因子分析与玩家聚类 ---
         with tab2:
@@ -695,6 +761,7 @@ if uploaded_file:
                                         color_continuous_scale='RdBu_r')
                 st.plotly_chart(fig_loadings, use_container_width=True)
                 st.info("💡 载荷值越高（如>0.5），说明该细项越属于这个‘维度’。")
+                st.session_state.ga_export_loadings = loadings.copy()
 
             except Exception as e:
                 st.error(f"因子分析执行失败: {str(e)}")
@@ -752,6 +819,10 @@ if uploaded_file:
             st.write("各玩家分群的样本数量：")
             cluster_counts = df_clustered["玩家分群"].value_counts().sort_index()
             st.write(cluster_counts.rename("样本数量"))
+            st.session_state.ga_export_cluster_means = cluster_means.copy()
+            st.session_state.ga_export_cluster_counts = pd.DataFrame(
+                {"玩家分群": cluster_counts.index.astype(str), "样本数量": cluster_counts.values}
+            )
 
             # 手动选择要对比的群体，并绘制雷达图
             try:
@@ -852,6 +923,7 @@ if uploaded_file:
             cluster_detail["玩家分群"] = df_clustered["玩家分群"].values
 
             st.dataframe(cluster_detail, use_container_width=True)
+            st.session_state.ga_export_cluster_detail = cluster_detail.copy()
 
         # --- TAB 3: 多元回归（驱动力与优先级诊断） ---
         with tab3:
@@ -978,6 +1050,14 @@ if uploaded_file:
                     core_mask = pd.Series([True] * len(results_df), index=results_df.index)
 
                 results_df["是否纳入核心模型"] = np.where(core_mask, "是", "否")
+
+                st.session_state.ga_export_regression = results_df.copy()
+                st.session_state.ga_export_model_health = pd.DataFrame(
+                    {
+                        "指标": ["样本量", "R-Squared", "Alpha"],
+                        "数值": [sample_size, final_model.rsquared, alpha],
+                    }
+                )
 
                 # IPA 驱动力矩阵
                 st.divider()
@@ -1120,7 +1200,8 @@ if uploaded_file:
                     return "期望属性" if row["满意度"] > m_sat else "无差异属性"
             
             kano_df["Kano分类"] = kano_df.apply(classify_kano, axis=1)
-            
+            st.session_state.ga_export_kano = kano_df.copy()
+
             fig_kano = px.scatter(kano_df, x="满意度", y="重要性(相关系数)", text="模块名称",
                                  color="Kano分类", size_max=40,
                                  title="Kano分析矩阵 (非对称满意度分析)")
@@ -1134,6 +1215,7 @@ if uploaded_file:
                     shap_df, shap_values, X_shap = analyzer.shap_importance(selected_features, target_col)
                     
                     st.write("SHAP 特征重要性 (处理非线性交互):")
+                    st.session_state.ga_export_shap = shap_df.copy()
                     fig_shap = px.bar(shap_df, x="SHAP重要性", y="模块名称", orientation='h',
                                      title="SHAP 特征重要性 (绝对值平均)")
                     st.plotly_chart(fig_shap, use_container_width=True)
@@ -1142,6 +1224,7 @@ if uploaded_file:
             else:
                 st.warning("⚠️ 未检测到 `shap` 库，展示随机森林特征重要性：")
                 shap_df, _, _ = analyzer.shap_importance(selected_features, target_col)
+                st.session_state.ga_export_shap = shap_df.copy()
                 st.dataframe(shap_df)
 
         # --- TAB 5: 路径分析 (SEM) ---
@@ -1197,7 +1280,8 @@ if uploaded_file:
                     path_results = analyzer.path_analysis(selected_features, target_col, model_spec, cluster=selected_cluster)
                     estimates = path_results["estimates"]
                     inv_safe_names = path_results["inv_safe_names"]
-                    
+                    st.session_state.ga_export_sem = estimates.copy()
+
                     st.write("原始估计结果表：")
                     st.dataframe(estimates, use_container_width=True)
 
@@ -1340,6 +1424,7 @@ if uploaded_file:
         with col_report:
             st.subheader("📄 自动化一键报告")
             st.write("将所有分析结果（包含建议与图表说明）导出。")
+            st.caption("各 Tab 的数据表请使用**左侧边栏「📦 一键整合导出」**下载多 Sheet Excel，无需在图表工具栏逐个保存。")
             
             # 生成简单的报告文本
             report_text = f"游戏体验分析报告\n目标变量: {target_col}\n分析模块: {', '.join(selected_features)}\n\n"

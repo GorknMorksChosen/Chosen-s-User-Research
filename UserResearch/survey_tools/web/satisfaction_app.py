@@ -20,6 +20,72 @@ from sklearn.cluster import KMeans
 plt.rcParams['font.sans-serif'] = ['SimHei']  # 使用黑体
 plt.rcParams['axes.unicode_minus'] = False  # 解决负号显示问题
 
+
+def _corr_matrix_for_export(cm: pd.DataFrame) -> pd.DataFrame:
+    """将相关矩阵转为带行名列的表，便于写入 Excel。"""
+    out = cm.copy()
+    out.insert(0, "模块", out.index.astype(str))
+    return out.reset_index(drop=True)
+
+
+def render_unified_export_sidebar() -> None:
+    """侧边栏：合并本会话中已生成的数据表，单文件 Excel 下载。"""
+    st.sidebar.divider()
+    st.sidebar.subheader("📦 一键整合导出")
+    st.sidebar.caption(
+        "将已执行步骤产生的**数据表**合并为一个 Excel；图表请在页面查看或截图。"
+    )
+    sheets: list[tuple[str, pd.DataFrame]] = []
+    if st.session_state.get("sat_export_ipa") is not None:
+        sheets.append(("IPA四象限明细", st.session_state.sat_export_ipa))
+    if st.session_state.get("sat_export_reg") is not None:
+        sheets.append(("多元回归诊断", st.session_state.sat_export_reg))
+        mi = st.session_state.get("sat_export_reg_model_info")
+        if isinstance(mi, pd.DataFrame) and not mi.empty:
+            sheets.append(("回归模型健康度", mi))
+        sm = st.session_state.get("sat_export_reg_summary")
+        if sm:
+            sheets.append(("回归自动摘要", pd.DataFrame({"摘要": [sm]})))
+    if st.session_state.get("sat_game_corr") is not None:
+        sheets.append(("高级_相关性矩阵", _corr_matrix_for_export(st.session_state.sat_game_corr)))
+    if st.session_state.get("sat_game_loadings") is not None:
+        sheets.append(("高级_因子载荷", st.session_state.sat_game_loadings))
+    if st.session_state.get("sat_game_cluster_means") is not None:
+        sheets.append(("高级_聚类分群均值", st.session_state.sat_game_cluster_means))
+    if st.session_state.get("sat_game_cluster_detail") is not None:
+        sheets.append(("高级_聚类样本明细", st.session_state.sat_game_cluster_detail))
+    if st.session_state.get("sat_game_reg") is not None:
+        sheets.append(("高级_多元回归", st.session_state.sat_game_reg))
+    if st.session_state.get("sat_game_kano") is not None:
+        sheets.append(("高级_Kano", st.session_state.sat_game_kano))
+    if st.session_state.get("sat_game_shap") is not None:
+        sheets.append(("高级_SHAP", st.session_state.sat_game_shap))
+    if st.session_state.get("sat_game_sem") is not None:
+        sheets.append(("高级_路径分析SEM", st.session_state.sat_game_sem))
+
+    if not sheets:
+        st.sidebar.info("暂无已缓存的导出表。请先在各模块中执行分析（如 IPA、回归、高级 Tab 中的按钮）。")
+        return
+
+    if "sat_unified_export_fn" not in st.session_state:
+        st.session_state.sat_unified_export_fn = "满意度工具_整合导出.xlsx"
+    st.sidebar.text_input("整合导出文件名", key="sat_unified_export_fn")
+    buf = BytesIO()
+    bundle = ExportBundle(workbook_name="满意度整合导出", sheets=sheets)
+    export_xlsx(bundle, buf)
+    _fn = safe_download_filename(
+        st.session_state.get("sat_unified_export_fn", "满意度工具_整合导出.xlsx"),
+        fallback="满意度工具_整合导出.xlsx",
+    )
+    st.sidebar.download_button(
+        label="📥 下载整合 Excel（多 Sheet）",
+        data=buf.getvalue(),
+        file_name=_fn,
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        key="sat_unified_export_dl",
+    )
+
+
 def render_ipa_module(df):
     st.header("基础洞察：IPA 四象限分析")
     st.markdown("""
@@ -111,6 +177,7 @@ def render_ipa_module(df):
                     st.warning(f"🚨 **分析结论：** 发现以下 {len(draggers)} 个核心拖累项：{', '.join(draggers['细项名称'].tolist())}。这些项影响力大但得分低，应优先优化。")
                 else:
                     st.success("✅ 暂时没有发现处于‘重点改进区’的明显拖累项。")
+                st.session_state.sat_export_ipa = res_df.copy()
         except Exception as e:
             st.error(f"分析过程中发生错误: {str(e)}。请检查选中的列是否包含有效的数值数据。")
 
@@ -255,6 +322,10 @@ def render_regression_module(df):
         priority_norm = priority_raw / (priority_raw.max() + 1e-6)
         results_df["改进优先级得分"] = np.round(priority_norm, 3)
 
+        model_info = pd.DataFrame(
+            {"指标": ["样本量", "R-Squared", "Alpha"], "数值": [sample_size, final_model.rsquared, alpha]}
+        )
+
         # IPA Plot
         st.divider()
         st.subheader("驱动力决策矩阵 (IPA)")
@@ -293,6 +364,9 @@ def render_regression_module(df):
             
             text_summary = "\n".join(summary_lines)
             st.text_area("自动分析摘要", value=text_summary, height=100)
+            st.session_state.sat_export_reg = results_df.copy()
+            st.session_state.sat_export_reg_model_info = model_info
+            st.session_state.sat_export_reg_summary = text_summary
 
         with col_export:
             st.subheader("导出报告")
@@ -302,7 +376,6 @@ def render_regression_module(df):
             sheet_诊断 = st.checkbox("统计诊断汇总", value=True, key="exp_diag")
             sheet_健康度 = st.checkbox("模型健康度", value=True, key="exp_health")
             sheet_摘要 = st.checkbox("自动摘要", value=True, key="exp_summary")
-            model_info = pd.DataFrame({"指标": ["样本量", "R-Squared", "Alpha"], "数值": [sample_size, final_model.rsquared, alpha]})
             sheets_list = []
             if sheet_诊断:
                 sheets_list.append(("统计诊断汇总", results_df))
@@ -389,6 +462,7 @@ def render_game_experience_module(df):
         st.subheader("模块关联矩阵")
         if st.button("计算相关性矩阵"):
             corr_matrix = analysis_df.corr(method='spearman')
+            st.session_state.sat_game_corr = corr_matrix.copy()
             fig_corr = px.imshow(corr_matrix, text_auto=".2f", aspect="auto", color_continuous_scale='RdBu_r', range_color=[-1, 1])
             st.plotly_chart(fig_corr, use_container_width=True)
 
@@ -406,6 +480,7 @@ def render_game_experience_module(df):
         n_factors = st.number_input("设定因子数量", 1, len(selected_features), 3, key="game_n_factors")
         if st.button("执行因子分析"):
             loadings, ev = analyzer.factor_analysis(selected_features, n_factors)
+            st.session_state.sat_game_loadings = loadings.copy()
             st.plotly_chart(px.imshow(loadings, text_auto=".2f", color_continuous_scale='RdBu_r'), use_container_width=True)
 
         st.divider()
@@ -418,6 +493,15 @@ def render_game_experience_module(df):
             
             # Show cluster means
             cluster_means = df_clustered.groupby('玩家分群').mean()
+            st.session_state.sat_game_cluster_means = cluster_means.copy()
+            st.session_state.sat_game_cluster_detail = pd.DataFrame({
+                "问卷行号": df_clustered.index,
+                "玩家分群": df_clustered["玩家分群"].values,
+            })
+            if id_col != "（使用问卷行号代替）" and id_col in df.columns:
+                st.session_state.sat_game_cluster_detail.insert(
+                    1, id_col, df[id_col].loc[df_clustered.index].values
+                )
             st.write(cluster_means)
 
     # --- TAB 3: 回归与因果 ---
@@ -481,6 +565,7 @@ def render_game_experience_module(df):
                 )
                 st.metric("R²", f"{reg_res['final_model'].rsquared:.3f}")
                 st.dataframe(reg_res['results_df'].sort_values("改进优先级得分", ascending=False), use_container_width=True)
+                st.session_state.sat_game_reg = reg_res["results_df"].copy()
             except Exception as e:
                 st.error(f"回归分析失败: {e}")
 
@@ -489,6 +574,7 @@ def render_game_experience_module(df):
         st.subheader("Kano 与 SHAP")
         if st.button("执行 Kano 分析"):
             kano_res = analyzer.kano_analysis(selected_features, target_col)
+            st.session_state.sat_game_kano = kano_res.copy()
             st.dataframe(kano_res, use_container_width=True)
             fig_kano = px.scatter(kano_res, x="满意度", y="重要性(相关系数)", text="模块名称", title="Kano 属性分类图")
             st.plotly_chart(fig_kano, use_container_width=True)
@@ -497,6 +583,7 @@ def render_game_experience_module(df):
         if st.button("执行 SHAP 重要性分析"):
             try:
                 imp_df, shap_values, X = analyzer.shap_importance(selected_features, target_col)
+                st.session_state.sat_game_shap = imp_df.copy()
                 st.dataframe(imp_df, use_container_width=True)
                 if shap_values is not None:
                      st.info("SHAP 值计算成功 (图表展示需 shap 库支持)")
@@ -514,6 +601,7 @@ def render_game_experience_module(df):
         if user_spec and st.button("执行路径分析"):
             try:
                 path_res = analyzer.path_analysis(selected_features, target_col, user_spec)
+                st.session_state.sat_game_sem = path_res["estimates"].copy()
                 st.dataframe(path_res['estimates'], use_container_width=True)
             except Exception as e:
                 st.error(f"路径分析失败: {e}")
@@ -566,6 +654,7 @@ def main():
     
     if 'df' in st.session_state:
         df = st.session_state.df
+        render_unified_export_sidebar()
         st.divider()
         
         if app_mode == "基础洞察：IPA 四象限分析":
