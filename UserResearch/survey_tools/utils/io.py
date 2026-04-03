@@ -10,7 +10,7 @@ from __future__ import annotations
 import os
 import tempfile
 from pathlib import Path
-from typing import BinaryIO, Dict, List, Optional, Tuple, Union
+from typing import Any, BinaryIO, Dict, List, Optional, Tuple, Union
 
 import pandas as pd
 
@@ -178,9 +178,14 @@ def apply_sav_labels(
             mapping = value_labels[col]
             if not mapping:
                 continue
-            out[col] = out[col].map(
-                lambda x: mapping.get(x, x) if pd.notna(x) and x in mapping else x
-            )
+            # 扩展 int/float 键，避免 SPSS 标签键与单元格 dtype 不一致导致 replace 漏匹配
+            expanded: Dict[Any, Any] = dict(mapping)
+            for k, v in list(mapping.items()):
+                if type(k) is float and k == int(k):
+                    expanded[int(k)] = v
+                elif type(k) is int:
+                    expanded[float(k)] = v
+            out[col] = out[col].replace(expanded)
     if variable_labels and apply_variable_labels:
         rename_map: Dict[str, str] = {}
         # H5: used_names 包含所有「不会被重命名」的列名，防止新标签与未标记列名碰撞

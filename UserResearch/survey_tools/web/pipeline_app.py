@@ -1,12 +1,14 @@
 from __future__ import annotations
 
+import shutil
+import tempfile
 from pathlib import Path
 from typing import Optional
 
 import pandas as pd
 import streamlit as st
 
-from scripts.run_playtest_pipeline import run_pipeline
+from survey_tools.core.playtest_pipeline import run_pipeline
 from survey_tools.core.quant import extract_qnum
 from survey_tools.utils.io import load_survey_data
 from survey_tools.utils.download_filename import safe_download_filename
@@ -113,21 +115,29 @@ def main() -> None:
         st.warning("请先上传有效数据文件。")
         return
 
-    output_dir = str(Path("data") / "processed")
+    force_overall = False
     if segment_choice == "自动推断":
         segment_col = None
     elif segment_choice == "总体（不分组）":
-        # 传入一个不会匹配到真实列名的占位 hint，强制回退到“总体”虚拟分组。
-        segment_col = "__FORCE_OVERALL__"
+        segment_col = None
+        force_overall = True
     else:
         segment_col = segment_choice
-        # 防误选：如果手动选择的是题目列（带题号），自动回退到总体分组。
         if extract_qnum(str(segment_col)):
             st.warning(
                 "检测到你选择的是问卷题目列（带题号），这通常不适合作为分组列。"
                 "本次已自动回退为“总体（不分组）”以避免误分组。"
             )
-            segment_col = "__FORCE_OVERALL__"
+            segment_col = None
+            force_overall = True
+
+    old_root = st.session_state.pop("_pipeline_temp_root", None)
+    if old_root:
+        shutil.rmtree(old_root, ignore_errors=True)
+
+    output_root = Path(tempfile.mkdtemp(prefix="ur_playtest_"))
+    st.session_state["_pipeline_temp_root"] = str(output_root)
+    output_dir = str(output_root)
 
     try:
         with st.status("正在执行 Playtest 流水线...", expanded=True) as status:
@@ -140,6 +150,7 @@ def main() -> None:
                 outline=parsed_outline,
                 sig_test=sig_test,
                 sig_alpha=float(sig_alpha),
+                force_overall=force_overall,
             )
             st.write("题型识别完毕")
             st.write("交叉分析完毕")
@@ -148,6 +159,7 @@ def main() -> None:
             status.update(label="流水线执行完成", state="complete", expanded=False)
 
         output_file = Path(run_res["output_file"])
+        st.session_state["_pipeline_output_file"] = str(output_file.resolve())
         st.success("分析完成，报告已生成。")
         _marker = str(output_file.resolve())
         if st.session_state.get("pipeline_dl_marker") != _marker:
@@ -158,9 +170,14 @@ def main() -> None:
             st.session_state.get("pipeline_dl_filename", output_file.name),
             fallback=output_file.name,
         )
+        _out_for_dl = output_file.resolve()
+
+        def _pipeline_download_data() -> bytes:
+            return _out_for_dl.read_bytes()
+
         st.download_button(
             "下载 Excel 报告",
-            data=output_file.read_bytes(),
+            data=_pipeline_download_data,
             file_name=_pipe_fn,
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             use_container_width=True,

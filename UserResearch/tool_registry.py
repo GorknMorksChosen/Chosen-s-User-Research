@@ -159,7 +159,7 @@ TOOLS: list[dict] = [
         "name": "一键 Playtest 流水线",
         "entry": "survey_tools/web/pipeline_app.py",
         "cli": "scripts/run_playtest_pipeline.py",
-        "core_fn": "scripts.run_playtest_pipeline.run_pipeline",
+        "core_fn": "survey_tools.core.playtest_pipeline.run_pipeline",
         "port": 8506,
         "stage": "web",
         "description": (

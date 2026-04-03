@@ -3,12 +3,12 @@
 问卷导出表中的「元数据列」识别：与 Playtest Pipeline 的 _auto_classify_columns 一致，
 用于自动将序号、答卷时间、所用时间等列标为「忽略」，避免误参与交叉统计。
 
-定量工具与 scripts/run_playtest_pipeline 共用本模块，避免关键词分叉。
+定量工具与 survey_tools.core.playtest_pipeline 共用本模块，避免关键词分叉。
 """
 
 from __future__ import annotations
 
-# 与 run_playtest_pipeline._FORCE_IGNORE_KEYWORDS 保持同步（子串匹配，作用于归一化后列名）
+# 与 playtest 流水线中 is_metadata_column 的判定口径保持一致（子串匹配，作用于归一化后列名）
 METADATA_IGNORE_KEYWORDS = [
     "答卷时间",
     "ip",

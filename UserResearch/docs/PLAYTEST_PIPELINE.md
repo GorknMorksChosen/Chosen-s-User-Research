@@ -1,6 +1,6 @@
 # Playtest 自动化分析流水线（CLI）
 
-本文档说明 `scripts/run_playtest_pipeline.py` 的用途、命令行参数、输出约定及维护要求。
+本文档说明 Playtest 流水线的用途、命令行参数、输出约定及维护要求。**实现代码**位于 `survey_tools/core/playtest_pipeline.py`；**CLI 薄入口**为 `scripts/run_playtest_pipeline.py`。
 
 ---
 
@@ -10,8 +10,8 @@
 
 1. **官方说明成对物**  
    - 本文件：`UserResearch/docs/PLAYTEST_PIPELINE.md`  
-   - 脚本模块 docstring：`UserResearch/scripts/run_playtest_pipeline.py` 文件最顶部的 `"""..."""`  
-   二者应表述一致；参数与行为以代码为准。
+   - 核心模块 docstring：`UserResearch/survey_tools/core/playtest_pipeline.py` 文件最顶部的 `"""..."""`  
+   二者应表述一致；参数与行为以代码为准（CLI 入口脚本仅含路径引导与 UTF-8 控制台设置）。
 
 2. **每次更新 Pipeline 后必须同步**  
    若改动涉及下列任一类，**须同时**更新本 Markdown **与** 脚本 docstring（并在 `docs/DEV_LOG.md` 追加一条变更记录，便于审计）：  
@@ -74,6 +74,7 @@
 | `--data-dir` | 原始问卷目录 | `data/raw` |
 | `--output-dir` | 报告输出目录 | `data/processed` |
 | `--segment-col` | 分组列名**子串**模糊匹配；缺省自动识别；找不到则用「总体」 | 无 |
+| `--force-overall` | 强制按「总体」单一分组输出，跳过自动分组列识别；与 `--segment-col` 同时存在时本项优先 | 关闭 |
 | `--sheet-name` | Excel 读取的 Sheet（支持索引如 `0`，或名称如 `Sheet1`）；仅对 `.xlsx/.xls` 生效 | 无（默认第 0 张） |
 | `--per-question-sheets` | 除汇总外，为每题单独建 Sheet（上限 60） | 关闭 |
 | `--outline` | 问卷大纲路径（`.docx` 问卷星 / `.txt` 腾讯）；不指定则在 `data-dir` 下自动找最新 `.docx` 或 `.txt` | 无 |
@@ -116,7 +117,7 @@ python scripts/run_playtest_pipeline.py --sheet-name "Sheet1"
 
 ## 相关代码与大纲
 
-- 流水线入口：`scripts/run_playtest_pipeline.py`  
+- 流水线实现：`survey_tools/core/playtest_pipeline.py`；CLI 入口：`scripts/run_playtest_pipeline.py`  
 - 大纲解析：`survey_tools/utils/outline_parser.py`（CLI 按扩展名：`.txt` → 腾讯规则，否则 → 问卷星规则）  
 - 变更日志：`docs/DEV_LOG.md`
 

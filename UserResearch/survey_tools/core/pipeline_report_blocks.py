@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 Pipeline 风格交叉表块：长表透视与题目级导出 block（均值行、NPS、T2B 等）。
-供 run_playtest_pipeline 与 quant_app 导出共用。
+供 survey_tools.core.playtest_pipeline 与 quant_app 导出共用。
 """
 from __future__ import annotations
 

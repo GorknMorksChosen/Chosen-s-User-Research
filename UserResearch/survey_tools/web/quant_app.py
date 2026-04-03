@@ -23,9 +23,9 @@ from survey_tools.core.quant import (
 )
 from survey_tools.core.survey_metadata_columns import is_metadata_column
 
-# Playtest 同版式 Excel（脚本入口；需从 UserResearch 根目录运行 streamlit）
+# Playtest 同版式 Excel（core 模块；需在能 import survey_tools 的环境下运行 streamlit）
 try:
-    from scripts.run_playtest_pipeline import export_quant_cross_analysis_xlsx_bytes
+    from survey_tools.core.playtest_pipeline import export_quant_cross_analysis_xlsx_bytes
 except ImportError:
     export_quant_cross_analysis_xlsx_bytes = None  # type: ignore[misc, assignment]
 from survey_tools.core.question_type import (
