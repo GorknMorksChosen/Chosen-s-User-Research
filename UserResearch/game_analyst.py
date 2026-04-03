@@ -29,8 +29,9 @@ from survey_tools.core.factor_compat import (
 )
 from survey_tools.core.missing_strategy import apply_missing_strategy
 from survey_tools.core.advanced_modeling import GameExperienceAnalyzer
-from survey_tools.utils.io import read_table_auto, ExportBundle, export_xlsx
+from survey_tools.utils.io import ExportBundle, export_xlsx
 from survey_tools.utils.download_filename import safe_download_filename
+from survey_tools.utils.streamlit_cached_helpers import cached_kmeans_fit, cached_read_table_bytes
 from survey_tools.utils.wjx_header import normalize_wjx_headers
 
 # 版本兼容性处理将在具体函数中通过try-except方式处理
@@ -207,12 +208,12 @@ class LegacyGameExperienceAnalyzer:
             return loadings, ev
         except TypeError as te:
             if is_factor_compat_error(te):
-                raise Exception(build_factor_compat_message())
+                raise RuntimeError(build_factor_compat_message()) from te
             raise te
         except Exception as e:
             if is_factor_compat_error(e):
-                raise Exception(build_factor_compat_message())
-            raise Exception(f"因子分析执行失败: {str(e)}")
+                raise RuntimeError(build_factor_compat_message()) from e
+            raise RuntimeError(f"因子分析执行失败: {str(e)}") from e
     
     def cluster_analysis(self, features: list, n_clusters: int = 3):
         """
@@ -457,7 +458,7 @@ class LegacyGameExperienceAnalyzer:
                 "sem_cols": sem_cols
             }
         except Exception as e:
-            raise Exception(f"路径分析执行失败: {str(e)}")
+            raise RuntimeError(f"路径分析执行失败: {str(e)}") from e
     
     def generate_recommended_model_spec(self, features: list, target: str, cluster=None):
         """
@@ -603,7 +604,9 @@ if uploaded_file:
     name = (uploaded_file.name or "").lower()
     selected_sheet_name = None
     if name.endswith(".xlsx") or name.endswith(".xls"):
-        xls = pd.ExcelFile(uploaded_file)
+        xbio = io.BytesIO(uploaded_file.getvalue())
+        xbio.name = name
+        xls = pd.ExcelFile(xbio)
         sheet_names = xls.sheet_names
         current_sheet = st.session_state.get("game_analyst_sheet_name", sheet_names[0])
         if current_sheet not in sheet_names:
@@ -624,11 +627,24 @@ if uploaded_file:
         'df_cleaned' not in st.session_state
         or st.session_state.get('uploaded_file_id') != file_id
     ):
+        for _k in list(st.session_state.keys()):
+            if _k.startswith("ga_"):
+                st.session_state.pop(_k, None)
+        st.session_state.pop("last_report", None)
+        st.session_state.pop("df_cleaned", None)
         st.session_state.uploaded_file_id = file_id
         if name.endswith(".xlsx") or name.endswith(".xls"):
-            st.session_state.df_cleaned = read_table_auto(xls, sheet_name=selected_sheet_name or 0)
+            st.session_state.df_cleaned = cached_read_table_bytes(
+                uploaded_file.getvalue(),
+                name,
+                selected_sheet_name or 0,
+            )
         else:
-            st.session_state.df_cleaned = read_table_auto(uploaded_file)
+            st.session_state.df_cleaned = cached_read_table_bytes(
+                uploaded_file.getvalue(),
+                name,
+                0,
+            )
         _df, _wjx_mod = normalize_wjx_headers(st.session_state.df_cleaned)
         if _wjx_mod:
             st.info("已自动规范化问卷星表头，便于多选/矩阵题识别。")
@@ -711,18 +727,20 @@ if uploaded_file:
             
             # 自动识别高相关模块对（相互关联的模块）
             st.markdown("**自动识别高相关模块对（绝对相关系数 ≥ 0.6）**")
-            high_pairs = []
             threshold = 0.6
             cols = corr_matrix.columns.tolist()
-            for i in range(len(cols)):
-                for j in range(i + 1, len(cols)):
-                    r = corr_matrix.iloc[i, j]
-                    if abs(r) >= threshold:
-                        high_pairs.append({
-                            "模块A": cols[i],
-                            "模块B": cols[j],
-                            "相关系数(Spearman)": round(r, 3)
-                        })
+            vals = corr_matrix.to_numpy(dtype=float)
+            ii, jj = np.triu_indices(len(cols), k=1)
+            r_flat = vals[ii, jj]
+            sel = np.abs(r_flat) >= threshold
+            high_pairs = [
+                {
+                    "模块A": cols[ii[k]],
+                    "模块B": cols[jj[k]],
+                    "相关系数(Spearman)": round(float(r_flat[k]), 3),
+                }
+                for k in np.flatnonzero(sel)
+            ]
             if high_pairs:
                 pairs_df = pd.DataFrame(high_pairs).sort_values(by="相关系数(Spearman)", ascending=False)
                 st.dataframe(pairs_df, use_container_width=True)
@@ -777,7 +795,11 @@ if uploaded_file:
             scaled_temp = scaler_temp.fit_transform(analysis_df)
             
             for k in K_range:
-                km = KMeans(n_clusters=k, random_state=42).fit(scaled_temp)
+                km = cached_kmeans_fit(
+                    np.ascontiguousarray(scaled_temp, dtype=np.float64),
+                    k,
+                    42,
+                )
                 distortions.append(km.inertia_)
                 silhouettes.append(silhouette_score(scaled_temp, km.labels_))
             

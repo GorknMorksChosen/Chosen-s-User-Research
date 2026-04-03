@@ -110,7 +110,7 @@ def perform_factor_analysis(df_scaled: pd.DataFrame, n_factors: int = None) -> p
             factor_scores = fa.transform(df_scaled)
     except Exception as e:
         if is_factor_compat_error(e):
-            raise Exception(build_factor_compat_message())
+            raise RuntimeError(build_factor_compat_message()) from e
         raise
     
     col_names = [f'Factor_{i+1}' for i in range(n_factors)]

@@ -67,10 +67,14 @@ def main() -> None:
         managed_processes.extend(launched)
 
     # 托管模式：退出启动器时，优雅终止本次启动的 Streamlit 子进程，避免端口占用累积。
-    for p in managed_processes:
-        if p.poll() is None:
-            p.terminate()
-    print(f"已退出启动器，并终止 {sum(1 for p in managed_processes if p.poll() is not None)} 个子进程。")
+    running = [p for p in managed_processes if p.poll() is None]
+    for p in running:
+        p.terminate()
+    already_exited = len(managed_processes) - len(running)
+    msg = f"已退出启动器。已向 {len(running)} 个仍在运行的子进程发送终止信号。"
+    if already_exited:
+        msg += f"（另有 {already_exited} 个已自行结束。）"
+    print(msg)
 
 
 if __name__ == "__main__":

@@ -6,12 +6,15 @@ import plotly.express as px
 import streamlit as st
 from survey_tools.utils.io import (
     read_table_auto,
-    load_sav,
     apply_sav_labels,
     ExportBundle,
     export_xlsx,
 )
 from survey_tools.utils.download_filename import safe_download_filename
+from survey_tools.utils.streamlit_cached_helpers import (
+    cached_load_sav_bytes,
+    cached_read_table_bytes,
+)
 from survey_tools.utils.wjx_header import normalize_wjx_headers
 from survey_tools.core.quant import (
     calculate_rating_metrics,
@@ -82,6 +85,39 @@ def init_session_state():
         st.session_state.outline_q_num_to_type = None  # 可选大纲解析后的题号→题型映射
     if "outline_skip_manual_merge" not in st.session_state:
         st.session_state.outline_skip_manual_merge = False  # 大纲成功解析后下一轮重建不合并旧「题型」
+
+
+def clear_quant_upload_derived_keys() -> None:
+    """换文件时释放 session 中的大对象，避免旧表与结果残留。"""
+    for k in (
+        "analysis_results",
+        "quant_summary",
+        "column_type_df",
+        "sav_cache_key",
+        "sav_df_raw",
+        "sav_variable_labels",
+        "sav_value_labels",
+        "export_ranking_buffer",
+        "export_ranking_name",
+        "export_cross_buffer",
+        "export_cross_name",
+        "ranking_result_cache",
+        "export_cross_seq",
+        "export_ranking_seq",
+        "export_cross_fn_bound_seq",
+        "export_ranking_fn_bound_seq",
+        "export_cross_dl_filename",
+        "export_ranking_dl_filename",
+        "combined_group_recipes",
+        "outline_q_num_to_type",
+        "outline_skip_manual_merge",
+        "core_segment_col",
+        "core_segment_col_widget",
+        "combined_group_name",
+    ):
+        st.session_state.pop(k, None)
+    st.session_state.df = None
+    init_session_state()
 
 
 def debug_log(message: str) -> None:
@@ -437,8 +473,12 @@ def main():
     if uploaded_file:
         try:
             name = uploaded_file.name.lower()
+            upload_key = (uploaded_file.name, uploaded_file.size)
+            if st.session_state.get("quant_upload_key") != upload_key:
+                clear_quant_upload_derived_keys()
+                st.session_state.quant_upload_key = upload_key
             if name.endswith(".csv"):
-                df = load_data(uploaded_file)
+                df = cached_read_table_bytes(uploaded_file.getvalue(), name, 0)
             elif name.endswith(".sav"):
                 # 缓存 .sav 解析结果，避免勾选切换时重复 read 导致流耗尽
                 # M5: 缓存键加入文件大小，同名不同内容时强制重新读取
@@ -447,7 +487,7 @@ def main():
                     getattr(st.session_state, "sav_cache_key", None) != cache_key
                     or st.session_state.get("sav_df_raw") is None
                 ):
-                    df, variable_labels, value_labels = load_sav(uploaded_file)
+                    df, variable_labels, value_labels = cached_load_sav_bytes(uploaded_file.getvalue())
                     st.session_state.sav_cache_key = cache_key
                     st.session_state.sav_df_raw = df
                     st.session_state.sav_variable_labels = variable_labels
@@ -474,7 +514,9 @@ def main():
                         apply_value_labels=apply_val,
                     )
             else:
-                xls = pd.ExcelFile(uploaded_file)
+                xbio = io.BytesIO(uploaded_file.getvalue())
+                xbio.name = name
+                xls = pd.ExcelFile(xbio)
                 sheet_names = xls.sheet_names
                 if len(sheet_names) > 1:
                     sheet_name = st.selectbox(
@@ -484,7 +526,7 @@ def main():
                     )
                 else:
                     sheet_name = sheet_names[0]
-                df = load_data(xls, sheet_name=sheet_name)
+                df = cached_read_table_bytes(uploaded_file.getvalue(), name, sheet_name)
             df, wjx_modified = normalize_wjx_headers(df)
             if wjx_modified:
                 st.info("已自动规范化问卷星表头，便于多选/矩阵题识别。")

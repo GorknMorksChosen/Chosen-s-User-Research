@@ -2,7 +2,6 @@ import pandas as pd
 import numpy as np
 
 from factor_analyzer import FactorAnalyzer
-from sklearn.cluster import KMeans
 from sklearn.preprocessing import StandardScaler
 import statsmodels.api as sm
 from statsmodels.stats.outliers_influence import variance_inflation_factor
@@ -20,6 +19,9 @@ try:
 except ImportError:
     shap = None
 from scipy import stats
+
+from survey_tools.utils.streamlit_cached_helpers import cached_kmeans_fit, cached_rf_fit
+
 
 class GameExperienceAnalyzer:
     """
@@ -143,12 +145,12 @@ class GameExperienceAnalyzer:
             return loadings, ev
         except TypeError as te:
             if is_factor_compat_error(te):
-                raise Exception(build_factor_compat_message())
+                raise RuntimeError(build_factor_compat_message()) from te
             raise te
         except Exception as e:
             if is_factor_compat_error(e):
-                raise Exception(build_factor_compat_message())
-            raise Exception(f"因子分析执行失败: {str(e)}")
+                raise RuntimeError(build_factor_compat_message()) from e
+            raise RuntimeError(f"因子分析执行失败: {str(e)}") from e
     
     def cluster_analysis(self, features: list, n_clusters: int = 3):
         """
@@ -169,7 +171,11 @@ class GameExperienceAnalyzer:
             sampled_data = analysis_df.sample(sample_size, random_state=42)
             scaler = StandardScaler()
             scaled_data = scaler.fit_transform(sampled_data)
-            kmeans = KMeans(n_clusters=n_clusters, random_state=42).fit(scaled_data)
+            kmeans = cached_kmeans_fit(
+                np.ascontiguousarray(scaled_data, dtype=np.float64),
+                n_clusters,
+                42,
+            )
             # 计算轮廓系数
             silhouette_avg = silhouette_score(scaled_data, kmeans.labels_)
             # 对所有数据进行预测
@@ -178,7 +184,11 @@ class GameExperienceAnalyzer:
         else:
             scaler = StandardScaler()
             scaled_data = scaler.fit_transform(analysis_df)
-            kmeans = KMeans(n_clusters=n_clusters, random_state=42).fit(scaled_data)
+            kmeans = cached_kmeans_fit(
+                np.ascontiguousarray(scaled_data, dtype=np.float64),
+                n_clusters,
+                42,
+            )
             silhouette_avg = silhouette_score(scaled_data, kmeans.labels_)
             labels = kmeans.labels_
         
@@ -236,9 +246,14 @@ class GameExperienceAnalyzer:
         df_clean = self.data[[target] + features].dropna()
         X = df_clean[features]
         y = df_clean[target]
-        
-        model = RandomForestRegressor(n_estimators=100, random_state=42)
-        model.fit(X, y)
+        feat_tuple = tuple(features)
+        model = cached_rf_fit(
+            np.ascontiguousarray(X.values.astype(np.float64)),
+            np.ascontiguousarray(y.values.astype(np.float64)),
+            feat_tuple,
+            100,
+            42,
+        )
         
         importance_df = pd.DataFrame({
             "模块名称": features,
@@ -430,7 +445,7 @@ class GameExperienceAnalyzer:
                 "sem_cols": sem_cols
             }
         except Exception as e:
-            raise Exception(f"路径分析执行失败: {str(e)}")
+            raise RuntimeError(f"路径分析执行失败: {str(e)}") from e
     
     def generate_recommended_model_spec(self, features: list, target: str, cluster=None):
         """

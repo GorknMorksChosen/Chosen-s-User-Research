@@ -4,7 +4,7 @@
 > 
 > 本项目整合了问卷数据处理、统计建模与文本分析的核心工具，旨在提供一站式的问卷分析解决方案。
 >
-> **当前核心工具模块总数 = 5**。历史文档中的旧称已统一替换为模块化命名。
+> **统一 Web 工具入口以 `UserResearch/tool_registry.py` 为唯一口径（当前注册 6 项，其 `entry` 字段即下文「Web 入口脚本」列）。** 历史文档中的旧称已统一替换为模块化命名。
 
 ### 项目定位与需求约定（可单独贴入需求文档）
 
@@ -51,30 +51,44 @@ cd UserResearch
 python web_tools_launcher.py
 ```
 
-### 方式二：单独启动指定工具
+### 方式二：单独启动指定工具（与 `tool_registry.py` 的 `entry` 一致）
+
+在 **`UserResearch/`** 下直接指定脚本与端口（端口须与注册表一致，避免冲突），例如：
+
 ```bash
 cd UserResearch
-streamlit run satisfaction_engine.py
+streamlit run survey_tools/web/quant_app.py --server.port 8501
 ```
+
+根目录下的 `quant_analysis_engine.py`、`satisfaction_engine.py`、`聚类.py` 等为**薄包装**，内部调用 `survey_tools/web/*_app.py`，与上式等价；日常仍推荐 **`python web_tools_launcher.py`** 选择工具。
+
+---
+
+## 安全与本地访问（威胁模型简述）
+
+- **Streamlit 默认无登录鉴权**：本仓库中的 Web 工具按本地分析场景设计，页面与上传数据**不对访客做身份校验**。仅在 `localhost` 本机访问时，风险主要限于本机用户与本地文件。
+- **局域网 / 远程访问**：若将 Streamlit 绑定到 `0.0.0.0` 或经端口转发、内网穿透对外暴露，**等同把分析能力与数据暴露给能访问该端口的任何人**。请在防火墙与网络策略中显式评估，生产或敏感数据场景应另行加反向代理、VPN、认证或专用部署方案。
+- **API Key 与 `.env`**：请勿将 `.env`、密钥或令牌提交到版本库；在团队规范中约定**不入库、不截图外传**；在共享或公用机器上，浏览器 Session 可能残留，**登出/清除站点数据**无法替代「不在共享环境长期存放密钥」的治理。
 
 ---
 
 ## 核心工具体系（当前唯一有效口径）
 
-经过架构重构，当前项目统一为五大核心引擎：
+经过架构重构，**Web 入口脚本**以 `UserResearch/tool_registry.py` 中各工具的 **`entry`** 字段为准（下表与之对齐）。根目录部分 `*_engine.py` / `聚类.py` 仅为兼容旧习惯的薄包装。
 
-| 序号 | 工具名称 | 入口脚本 | 定位 |
+| 序号 | 工具名称 | Web 入口脚本（`entry`） | 定位 |
 | :--- | :--- | :--- | :--- |
-| 1 | 问卷定量交叉分析 (Quant Engine) | `quant_analysis_engine.py` | 高频交叉分析与显著性检验 |
-| 2 | 满意度与体验建模 (Standard) | `satisfaction_engine.py` | IPA + 回归驱动的标准诊断 |
+| 1 | 问卷定量交叉分析 (Quant Engine) | `survey_tools/web/quant_app.py` | 高频交叉分析与显著性检验 |
+| 2 | 满意度与体验建模 (Standard) | `survey_tools/web/satisfaction_app.py` | IPA + 回归驱动的标准诊断 |
 | 3 | 全链路归因分析 (Advanced) | `game_analyst.py` | 因子/分群/路径/非线性归因 |
-| 4 | 玩家分群分析 (Advanced) | `聚类.py` | 多算法分群 + 推荐策略 + 可视化画像 |
+| 4 | 玩家分群分析 (Advanced) | `survey_tools/web/cluster_app.py` | 多算法分群 + 推荐策略 + 可视化画像 |
 | 5 | 问卷文本分析引擎 (Text Engine) | `问卷文本分析工具 v1.py` | 开放题语义分析与结构化导出 |
+| 6 | 一键 Playtest 流水线 | `survey_tools/web/pipeline_app.py` | 题型识别、交叉、满意度建模与报告导出 |
 
 > **2026-04-02**：启动菜单 **2**（满意度与体验建模）与 **3**（全链路归因）均已支持左侧边栏 **「一键整合导出」**，将已计算的数据表汇总为**单个多 Sheet Excel**（图表仍在页面查看）。二者定位差异与使用建议见 **`UserResearch/README.md`**（「工具 2 与工具 3」对照表及模块二、三说明）。
 
 ### 模块一：问卷定量交叉分析 (Quant Engine)
-*   **入口脚本**：`quant_analysis_engine.py`
+*   **入口脚本**：`survey_tools/web/quant_app.py`（根目录 `quant_analysis_engine.py` 为薄包装，等价）
 *   **核心功能**：
     *   **自动交叉制表**：智能识别单选、多选、评分、矩阵等题型，生成带显著性差异检验的标准报表。
     *   **题型识别**：自动解析题干中的 `【单选】`、`[多选]` 等标记，并支持人工微调。
@@ -84,7 +98,7 @@ streamlit run satisfaction_engine.py
 *   **适用场景**：日常问卷基础数据处理、快速生成带统计检验的 Cross-tab 报表。
 
 ### 模块二：满意度与体验建模 (Standard)
-*   **入口脚本**：`satisfaction_engine.py`
+*   **入口脚本**：`survey_tools/web/satisfaction_app.py`（根目录 `satisfaction_engine.py` 为薄包装，等价）
 *   **核心功能**：
     1.  **基础洞察 (IPA)**：基于满意度表现与重要性（相关系数）的四象限分析，快速识别拖累项。
     2.  **核心诊断 (Regression)**：自动化多元回归分析，包含信度检验、VIF 共线性诊断及改进优先级排序。
@@ -101,7 +115,7 @@ streamlit run satisfaction_engine.py
 *   **适用场景**：复杂的游戏体验模型构建、精细化玩家分群研究、学术级归因分析。
 
 ### 模块四：玩家分群分析 (Advanced) **[NEW]**
-*   **入口脚本**：`聚类.py` (调用 `survey_tools.web.cluster_app`)
+*   **入口脚本**：`survey_tools/web/cluster_app.py`（根目录 `聚类.py` 为薄包装，等价）
 *   **核心功能**：
     *   **数据清洗**：自动检测跳题导致的缺失值，支持“剔除 / 均值填充 / 中位数填充”策略切换。
     *   **降维分析**：内置因子分析 (Factor Analysis) 提取潜在维度，提升聚类稳定性。
@@ -121,6 +135,10 @@ streamlit run satisfaction_engine.py
     *   **[NEW]** 支持请求重试与指数退避、失败批次重放及调用统计，提升限流/抖动场景稳定性。
     *   **[NEW]** 导出链路改为流式写入并采用“准备导出→下载”模式，降低大样本导出内存峰值。
 *   **适用场景**：处理大量开放式问卷文本，挖掘非结构化数据中的洞察。
+
+### 模块六：一键 Playtest 流水线
+*   **入口脚本**：`survey_tools/web/pipeline_app.py`
+*   **说明**：与统一启动菜单第 6 项一致；CLI 入口见 `tool_registry.py` 中 `cli` 字段（`scripts/run_playtest_pipeline.py`）。详细行为与参数说明见 **`UserResearch/docs/PLAYTEST_PIPELINE.md`**。
 
 ---
 
@@ -147,8 +165,9 @@ streamlit run satisfaction_engine.py
     ├── tests/                        # run_quality_matrix、verify_*
     ├── archive/                      # 已替代的历史脚本与实验脚本
     ├── scripts/                      # CLI（run_playtest_pipeline 说明见 docs/PLAYTEST_PIPELINE.md）
-    ├── web_tools_launcher.py         # 统一启动菜单
-    └── … Streamlit 入口脚本 *.py
+    ├── tool_registry.py              # Web 工具元数据（entry / port，与 README 口径一致）
+    ├── web_tools_launcher.py         # 统一启动菜单（读取 tool_registry）
+    └── … 根目录薄包装与 Streamlit 入口（以 tool_registry 为准）
 ```
 
 ---
