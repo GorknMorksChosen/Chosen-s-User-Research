@@ -4,7 +4,7 @@
 > 
 > 本项目整合了问卷数据处理、统计建模与文本分析的核心工具，旨在提供一站式的问卷分析解决方案。
 >
-> **统一 Web 工具入口以 `UserResearch/tool_registry.py` 为唯一口径（当前注册 6 项，其 `entry` 字段即下表「Web 入口脚本」列）。** Playtest 另提供 CLI（`scripts/run_playtest_pipeline.py`），与 Web 入口并列于 `tool_registry` 的 `cli` 字段。历史文档中的旧称已统一替换为模块化命名。
+> **当前核心工具模块总数 = 6（含 5 个主交互工具 + 1 条 Playtest Pipeline CLI）**。历史文档中的旧称已统一替换为模块化命名。
 
 ## 术语口径声明（当前生效）
 
@@ -61,47 +61,33 @@ cp .env.example .env     # macOS / Linux
 python web_tools_launcher.py
 ```
 
-### 方式二：单独启动指定工具（与 `tool_registry.py` 的 `entry` 一致）
-
+### 方式二：单独启动指定工具
 ```bash
-streamlit run survey_tools/web/quant_app.py --server.port 8501
+streamlit run satisfaction_engine.py
 ```
 
-根目录 `quant_analysis_engine.py`、`satisfaction_engine.py`、`聚类.py` 等为薄包装，等价于 `streamlit run survey_tools/web/*_app.py`；日常仍推荐 **`python web_tools_launcher.py`**。
-
 ### 方式三：运行 Playtest 自动化流水线（CLI）
-
 ```bash
 python scripts/run_playtest_pipeline.py
 ```
-
-（Web 版见 `survey_tools/web/pipeline_app.py`，与启动菜单第 6 项一致。）
-
----
-
-## 安全与本地访问（威胁模型简述）
-
-- **Streamlit 默认无登录鉴权**：本仓库中的 Web 工具按本地分析场景设计，页面与上传数据**不对访客做身份校验**。仅在 `localhost` 本机访问时，风险主要限于本机用户与本地文件。
-- **局域网 / 远程访问**：若将 Streamlit 绑定到 `0.0.0.0` 或经端口转发、内网穿透对外暴露，**等同把分析能力与数据暴露给能访问该端口的任何人**。请在防火墙与网络策略中显式评估；敏感数据场景应另行加反向代理、VPN、认证或专用部署方案。
-- **API Key 与 `.env`**：请勿将 `.env`、密钥或令牌提交到版本库；团队约定**不入库、不截图外传**；在共享或公用机器上，浏览器 Session 可能残留，**登出/清除站点数据**不能替代「不在共享环境长期存放密钥」的治理。
 
 ---
 
 ## 核心工具体系（当前唯一有效口径）
 
-经过架构重构，**Web 入口脚本**以 `tool_registry.py` 中各工具的 **`entry`** 为准（下表与之对齐）。根目录部分 `*_engine.py` / `聚类.py` 仅为兼容旧习惯的薄包装。
+经过架构重构，当前项目统一为六大核心模块（5 个交互分析工具 + 1 条自动化 Pipeline）：
 
-| 序号 | 工具名称 | Web 入口脚本（`entry`） | 定位 |
+| 序号 | 工具名称 | 入口脚本 | 定位 |
 | :--- | :--- | :--- | :--- |
-| 1 | 问卷定量交叉分析 (Quant Engine) | `survey_tools/web/quant_app.py` | 高频交叉分析与显著性检验 |
-| 2 | 满意度与体验建模 (Standard) | `survey_tools/web/satisfaction_app.py` | IPA + 回归驱动的标准诊断 |
+| 1 | 问卷定量交叉分析 (Quant Engine) | `quant_analysis_engine.py` | 高频交叉分析与显著性检验 |
+| 2 | 满意度与体验建模 (Standard) | `satisfaction_engine.py` | IPA + 回归驱动的标准诊断 |
 | 3 | 全链路归因分析 (Advanced) | `game_analyst.py` | 因子/分群/路径/非线性归因 |
-| 4 | 玩家分群分析 (Advanced) | `survey_tools/web/cluster_app.py` | 多算法分群 + 推荐策略 + 可视化画像 |
+| 4 | 玩家分群分析 (Advanced) | `聚类.py` | 多算法分群 + 推荐策略 + 可视化画像 |
 | 5 | 问卷文本分析引擎 (Text Engine) | `问卷文本分析工具 v1.py` | 开放题语义分析与结构化导出 |
-| 6 | 一键 Playtest 流水线 | `survey_tools/web/pipeline_app.py` | Web 一键流水线；批量自动化见 CLI（`scripts/run_playtest_pipeline.py`） |
+| 6 | Playtest 自动化流水线 (Pipeline CLI) | `scripts/run_playtest_pipeline.py` | 自动读取最新数据并一键导出多 Sheet 报告 |
 
 ### 模块一：问卷定量交叉分析 (Quant Engine)
-*   **入口脚本**：`survey_tools/web/quant_app.py`（根目录 `quant_analysis_engine.py` 为薄包装，等价）
+*   **入口脚本**：`quant_analysis_engine.py`
 *   **核心功能**：
     *   **自动交叉制表**：智能识别单选、多选、评分、矩阵等题型，生成带显著性差异检验的标准报表。
     *   **题型识别**：自动解析题干中的 `【单选】`、`[多选]` 等标记，并支持人工微调。
@@ -125,35 +111,24 @@ python scripts/run_playtest_pipeline.py
 *   详细变更记录见 `docs/DEV_LOG.md` 对应日期条目。
 
 ### 模块二：满意度与体验建模 (Standard)
-*   **入口脚本**：`survey_tools/web/satisfaction_app.py`（根目录 `satisfaction_engine.py` 为薄包装；与 `web_tools_launcher.py` 菜单 **2** 一致）
+*   **入口脚本**：`satisfaction_engine.py`
 *   **核心功能**：
     1.  **基础洞察 (IPA)**：基于满意度表现与重要性（相关系数）的四象限分析，快速识别拖累项。
     2.  **核心诊断 (Regression)**：自动化多元回归分析，包含信度检验、VIF 共线性诊断及改进优先级排序。
-    3.  **高级模式（全链路体验建模）**：在同一应用内以 Tab 提供相关、因子、聚类、回归、Kano/SHAP、路径等探索能力（与旗舰版有重叠，见下表）。
-*   **导出**：除各模块自带的「勾选 Sheet → 下载」外，左侧边栏提供 **「📦 一键整合导出」**，将本会话已生成的**数据表**打包为**单个多 Sheet Excel**（IPA / 回归 / 高级模式各步骤在成功执行后写入缓存；图表仍在页面查看）。
-*   **适用场景**：快速驱动力分析、基础归因诊断；需要在 IPA、标准回归与高级 Tab 之间灵活切换时优先使用。
-
-### 工具 2 与工具 3（launcher 菜单）如何选择
-
-| 维度 | 菜单 **2** · 满意度与体验建模 (Standard) | 菜单 **3** · 全链路归因 (Advanced，`game_analyst.py`) |
-| :--- | :--- | :--- |
-| **产品形态** | 单应用内 **三个功能模块**（IPA / 回归 / 高级模式）侧边栏切换 | **单一路径工作台**：数据体检 → 各分析 Tab → 决策中心（资源模拟、简报等） |
-| **典型流程** | 按任务选模块，适合「只做 IPA」或「只做回归」 | 从体检到 SEM 的完整链路，适合深度归因与机制叙事 |
-| **导出** | 侧边栏 **一键整合导出**（缓存随模块执行累积） | 侧边栏 **一键整合导出**（缓存随各 Tab 计算累积）；决策中心另有 TXT 简报 |
+*   **适用场景**：快速驱动力分析、基础归因诊断。
 
 ### 模块三：全链路归因分析 (Advanced) **[NEW]**
-*   **入口脚本**：`game_analyst.py`（`web_tools_launcher.py` 菜单 **3**）
-*   **定位**：新一代旗舰级分析工具，专为深度游戏体验研究打造。
+*   **入口脚本**：`game_analyst.py`
+*   **定位**：新分析工具，专为深度游戏体验研究打造。
 *   **核心模块**：
     *   **数据体检**：自动检测直线勾选、作答过快、离群值等异常样本。
     *   **因子与聚类**：内置因子分析降维与 K-Means 玩家分群。
     *   **路径分析 (SEM)**：支持构建复杂的结构方程模型，验证多层级因果假设。
     *   **Kano 与 SHAP**：集成非线性特征重要性分析。
-*   **导出**：左侧边栏 **「📦 一键整合导出」** 汇总各 Tab 已生成的表格为**单个多 Sheet Excel**；交互图仍在页面查看。**决策中心**说明：表格数据以侧边栏下载为主，不必依赖图表工具栏逐个保存。
 *   **适用场景**：复杂的游戏体验模型构建、精细化玩家分群研究、学术级归因分析。
 
 ### 模块四：玩家分群分析 (Advanced) **[NEW]**
-*   **入口脚本**：`survey_tools/web/cluster_app.py`（根目录 `聚类.py` 为薄包装，等价）
+*   **入口脚本**：`聚类.py` (调用 `survey_tools.web.cluster_app`)
 *   **核心功能**：
     *   **数据清洗**：自动检测跳题导致的缺失值，支持“剔除 / 均值填充 / 中位数填充”策略切换。
     *   **因子降维**：内置因子分析 (Factor Analysis) 提取潜在维度，提升聚类稳定性。
@@ -174,6 +149,8 @@ python scripts/run_playtest_pipeline.py
     *   **[NEW]** 导出链路改为流式写入并采用“准备导出→下载”模式，降低大样本导出内存峰值。
     *   **[NEW | 2026-03-30]** 接入问卷大纲解析（问卷星/腾讯）并复用统一题型识别口径，选择器显示题型标签。
     *   **[NEW | 2026-03-30]** 新增「按题选择（同题多列自动归并）」模式，多选题子列按同一题归并，输入体验与 Quant/Pipeline 对齐。
+    *   **[NEW | 2026-04-07]** 新增「题型识别手动调整（可选）」：支持题号/关键词搜索、题目多选批量改题型、批量恢复自动识别；并修复 `16/016` 题号口径不一致导致的“手动改后目标题目不可见”问题。
+    *   **[NEW | 2026-04-07]** 大纲 docx 解析增强为“题号行后持续拼接至题型标签行”的多行题干通用模式，兼容长题干跨多行，确保题型覆盖更稳定。
 *   **适用场景**：处理大量开放式问卷文本，挖掘非结构化数据中的洞察。
 
 ### 模块补充：玩家画像多维打标签工具（专项 Web）
@@ -187,9 +164,8 @@ python scripts/run_playtest_pipeline.py
     *   支持导出“交付口径”列（优先最终，回退 AI），并内置标签命中看板（标签人数/占比 + Top 组合）。
 *   **当前产品决策**：该工具先以专项脚本形式维护，不并入 launcher 主菜单；当口径稳定后再评估纳入 `tool_registry.py`。
 
-### 模块六：一键 Playtest 流水线（Web + CLI）
-*   **Web 入口脚本**：`survey_tools/web/pipeline_app.py`（与 `web_tools_launcher.py` 菜单 **6**、`tool_registry` 的 `entry` 一致）
-*   **CLI 入口脚本**：`scripts/run_playtest_pipeline.py`（与 `tool_registry` 的 `cli` 一致；适合批量自动化）
+### 模块六：Playtest 自动化流水线 (Pipeline CLI)
+*   **入口脚本**：`scripts/run_playtest_pipeline.py`
 *   **核心功能**：
     *   自动读取 `data/raw/` 下最新问卷数据（`.sav/.csv/.xlsx`）。
     *   自动题型识别与分组识别，支持 `--segment-col`、`--outline`、`--sheet-name`。
@@ -232,20 +208,19 @@ UserResearch/  （工作目录）
 │       ├── quant_app.py
 │       ├── satisfaction_app.py
 │       ├── cluster_app.py
-│       ├── pipeline_app.py
 │       └── ...
 ├── docs/                            # 设计说明、DEV_LOG、Playtest 流水线说明等
 ├── tests/                           # 质量矩阵与 verify_* 回归脚本
 ├── archive/                         # 已替代的历史脚本与一次性实验脚本
 ├── scripts/
 │   └── run_playtest_pipeline.py     # [CLI] Playtest 自动化分析流水线（可选 --outline，大纲解析同上）
-├── quant_analysis_engine.py           # [薄包装] → survey_tools/web/quant_app.py
-├── satisfaction_engine.py             # [薄包装] → survey_tools/web/satisfaction_app.py
+├── quant_analysis_engine.py           # [入口] Quant Engine
+├── satisfaction_engine.py             # [入口] Standard
 ├── game_analyst.py                  # [入口] Flagship 归因
-├── 聚类.py                           # [薄包装] → survey_tools/web/cluster_app.py
+├── 聚类.py                           # [入口] Flagship 分群
 ├── 问卷文本分析工具 v1.py             # [入口] Text Engine
 ├── web_tools_launcher.py            # [入口] 统一控制台启动菜单
-└── tool_registry.py                 # Web 工具元数据（entry / port / cli；README 口径以此为准）
+└── tool_registry.py                 # 工具元数据（启动菜单读取）
 ```
 
 ---
