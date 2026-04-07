@@ -60,6 +60,25 @@ def parse_outline_docx(source: Union[str, Path, bytes]) -> Dict[int, dict]:
     i = 0
     while i < len(lines):
         curr = lines[i]
+        # 兼容：题号与题干/题型标签跨多行（不限 2/3 行）。
+        # 例如：
+        # - `16.` / `题干第一行` / `题干第二行` / `[填空题]`
+        # 合并后统一为：`16. 题干第一行 题干第二行 [填空题]`。
+        if re.match(r"^\d+\.\s*$", curr):
+            j = i + 1
+            merged_parts: List[str] = [curr.rstrip()]
+            while j < len(lines):
+                merged_parts.append(lines[j].strip())
+                if TYPE_TAG_RE.match(lines[j]):
+                    merged.append(" ".join(p for p in merged_parts if p))
+                    i = j + 1
+                    break
+                j += 1
+            else:
+                # 未找到题型标签时，保留原行，避免吞掉内容。
+                merged.append(curr)
+                i += 1
+            continue
         if (
             i + 1 < len(lines)
             and TYPE_TAG_RE.match(lines[i + 1])

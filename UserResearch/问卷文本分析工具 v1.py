@@ -275,10 +275,24 @@ def build_question_selector_map(df: pd.DataFrame, col_type_map: dict[str, str]) 
     """构建题目级选择映射：显示标签 -> 该题对应的列集合。"""
     q_data = parse_columns_for_questions(df.columns.tolist())
     label_map: dict[str, list[str]] = {}
+    def _norm_qnum_for_cmp(v: str | int | None) -> str:
+        if v is None:
+            return ""
+        s = str(v).strip()
+        if not s:
+            return ""
+        try:
+            return str(int(s))
+        except ValueError:
+            return s
 
     for q_num in sorted(q_data.keys()):
         info = q_data[q_num]
-        q_cols = [c for c in df.columns if extract_qnum(str(c)) == str(q_num)]
+        q_cols = [
+            c
+            for c in df.columns
+            if _norm_qnum_for_cmp(extract_qnum(str(c))) == _norm_qnum_for_cmp(q_num)
+        ]
         if not q_cols:
             continue
         type_candidates = [col_type_map.get(str(c), "未识别") for c in q_cols]
@@ -309,6 +323,40 @@ def build_question_selector_map(df: pd.DataFrame, col_type_map: dict[str, str]) 
             idx += 1
         label_map[label] = [c_str]
     return label_map
+
+
+def apply_manual_q_type_overrides(
+    df: pd.DataFrame,
+    col_type_map: dict[str, str],
+    manual_q_type_overrides: dict[str, str] | None,
+) -> dict[str, str]:
+    """按题号应用手动题型覆盖，供目标/背景题选择器即时使用。"""
+    overrides = manual_q_type_overrides or {}
+    if not overrides:
+        return col_type_map
+    updated = dict(col_type_map)
+
+    def _norm_qkey(q: str) -> str:
+        q_s = str(q).strip()
+        if not q_s:
+            return ""
+        try:
+            return str(int(q_s))
+        except ValueError:
+            return q_s
+
+    normalized_overrides = {_norm_qkey(k): v for k, v in overrides.items()}
+    for col in df.columns:
+        col_s = str(col)
+        if is_metadata_column(col_s):
+            continue
+        q_str = extract_qnum(col_s)
+        if not q_str:
+            continue
+        forced_type = normalized_overrides.get(_norm_qkey(q_str))
+        if forced_type:
+            updated[col_s] = forced_type
+    return updated
 
 
 def compute_keyword_deviations(df, target_cols, group_col, keywords, threshold=0.15, topk=15):
@@ -606,6 +654,8 @@ def init_session_state():
         st.session_state.parsed_outline = None
     if "column_type_map" not in st.session_state:
         st.session_state.column_type_map = {}
+    if "manual_q_type_overrides" not in st.session_state:
+        st.session_state.manual_q_type_overrides = {}
 
 
 def apply_user_dict():
@@ -862,6 +912,7 @@ if uploaded_file:
         st.session_state.df = df
         st.session_state.parsed_outline = parsed_outline
         st.session_state.column_type_map = column_type_map
+        st.session_state.manual_q_type_overrides = {}
         st.session_state.export_data_bytes = None
         st.session_state.export_data_name = ""
         st.success(f"成功读取文件: {uploaded_file.name}, 共 {len(df)} 行数据")
@@ -874,7 +925,110 @@ if st.session_state.df is not None:
     col_type_map = st.session_state.get("column_type_map", {}) or {}
     if not col_type_map:
         col_type_map = build_text_tool_column_type_map(df, outline=st.session_state.get("parsed_outline"))
-        st.session_state.column_type_map = col_type_map
+    col_type_map = apply_manual_q_type_overrides(
+        df,
+        col_type_map,
+        st.session_state.get("manual_q_type_overrides", {}),
+    )
+    st.session_state.column_type_map = col_type_map
+    q_data = parse_columns_for_questions(df.columns.tolist())
+
+    with st.expander("🛠️ 题型识别手动调整（可选）", expanded=False):
+        st.caption("当自动识别有误时，可按题号手动指定题型（如将误判的单选改为“开放文本”）。")
+        manual_q_type_options = ["开放文本", "单选", "多选", "矩阵", "评分", "NPS"]
+        def _norm_qnum_for_cmp(v: str | int | None) -> str:
+            if v is None:
+                return ""
+            s = str(v).strip()
+            if not s:
+                return ""
+            try:
+                return str(int(s))
+            except ValueError:
+                return s
+        question_labels: list[str] = []
+        for q_num in sorted(q_data.keys()):
+            q_cols = [
+                c
+                for c in cols
+                if _norm_qnum_for_cmp(extract_qnum(str(c))) == _norm_qnum_for_cmp(q_num)
+            ]
+            if not q_cols:
+                continue
+            q_type_candidates = [col_type_map.get(str(c), "未识别") for c in q_cols]
+            q_type_candidates = [t for t in q_type_candidates if t not in ("元数据", "未识别")]
+            q_type = q_type_candidates[0] if q_type_candidates else col_type_map.get(str(q_cols[0]), "未识别")
+            stem = str(q_data[q_num].get("stem") or q_cols[0]).strip()
+            question_labels.append(f"Q{int(q_num):03d} [{q_type}] {stem}")
+        search_kw = st.text_input(
+            "搜索题目（题号/关键词）",
+            value="",
+            placeholder="例如：16 或 战场信息清晰度",
+            disabled=config_locked,
+        ).strip().lower()
+        filtered_question_labels = question_labels
+        if search_kw:
+            filtered_question_labels = [q for q in question_labels if search_kw in q.lower()]
+        selected_q_labels = st.multiselect(
+            "选择要调整的题目（可多选）",
+            options=filtered_question_labels,
+            default=[],
+            disabled=config_locked,
+        )
+        selected_q_nums: list[str] = []
+        for q_label in selected_q_labels:
+            m_qnum = re.search(r"^Q(\d+)\s", q_label)
+            q_num = m_qnum.group(1) if m_qnum else ""
+            try:
+                q_num = str(int(q_num))
+            except ValueError:
+                continue
+            selected_q_nums.append(q_num)
+        selected_q_nums = list(dict.fromkeys(selected_q_nums))
+
+        forced_type = st.selectbox(
+            "将所选题目统一标记为",
+            options=manual_q_type_options,
+            index=0,
+            disabled=config_locked or (len(selected_q_nums) == 0),
+        )
+        c_apply, c_reset = st.columns(2)
+        with c_apply:
+            if st.button("批量应用题型调整", disabled=config_locked or (len(selected_q_nums) == 0)):
+                overrides = dict(st.session_state.get("manual_q_type_overrides", {}))
+                for q_num in selected_q_nums:
+                    overrides[q_num] = forced_type
+                st.session_state.manual_q_type_overrides = overrides
+                st.session_state.column_type_map = apply_manual_q_type_overrides(df, col_type_map, overrides)
+                st.success(f"已将 {len(selected_q_nums)} 道题标记为：{forced_type}")
+                st.rerun()
+        with c_reset:
+            if st.button("批量恢复自动识别", disabled=config_locked or (len(selected_q_nums) == 0)):
+                overrides = dict(st.session_state.get("manual_q_type_overrides", {}))
+                changed = 0
+                for q_num in selected_q_nums:
+                    if q_num in overrides:
+                        overrides.pop(q_num, None)
+                        changed += 1
+                if changed > 0:
+                    st.session_state.manual_q_type_overrides = overrides
+                    st.session_state.column_type_map = apply_manual_q_type_overrides(df, col_type_map, overrides)
+                    st.success(f"已恢复 {changed} 道题自动识别")
+                    st.rerun()
+                else:
+                    st.info("所选题目当前没有手动覆盖。")
+        active_overrides = st.session_state.get("manual_q_type_overrides", {})
+        if active_overrides:
+            active_desc = ", ".join([f"Q{int(k):03d}→{v}" for k, v in sorted(active_overrides.items(), key=lambda x: int(x[0]))])
+            st.info(f"当前手动题型调整：{active_desc}")
+            if st.button("清空全部手动题型调整", disabled=config_locked):
+                st.session_state.manual_q_type_overrides = {}
+                st.session_state.column_type_map = build_text_tool_column_type_map(
+                    df, outline=st.session_state.get("parsed_outline")
+                )
+                st.success("已清空全部手动题型调整。")
+                st.rerun()
+
     target_default_options = [c for c in cols if col_type_map.get(c) == "开放文本"]
     if not target_default_options:
         target_default_options = [c for c in cols if col_type_map.get(c) not in ("元数据", "多选", "矩阵")]

@@ -83,7 +83,9 @@ class GameExperienceAnalyzer:
         # 4. 离群值检测 (基于 Z-score)
         outlier_indices = set()
         if len(features) > 0:
-            numeric_df = self.data[features].apply(pd.to_numeric, errors='coerce').fillna(self.data[features].mean())
+            # 先整体数值化，再用数值化后的列均值填补，避免原始对象列参与 mean 导致类型错误
+            numeric_df = self.data[features].apply(pd.to_numeric, errors='coerce')
+            numeric_df = numeric_df.fillna(numeric_df.mean())
             z_scores = np.abs(stats.zscore(numeric_df))
             outliers = (z_scores > 3).any(axis=1)
             report['outliers_count'] = outliers.sum()
