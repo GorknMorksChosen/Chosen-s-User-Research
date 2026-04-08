@@ -8,6 +8,44 @@
 
 ---
 
+## 📅 2026-04-08（最新）
+
+### Quant 导出题型标注与「题型微调」对齐（含不重跑导出场景）
+
+**涉及文件**：
+- `survey_tools/core/quant.py`
+- `survey_tools/core/playtest_pipeline.py`
+- `survey_tools/web/quant_app.py`
+- `README.md`
+- `docs/DEV_LOG.md`
+
+**背景**：
+- 用户在工具 1（`web_tools_launcher.py` -> `survey_tools/web/quant_app.py`）中先完成交叉分析，再在「题型微调」把 Q2/Q3 从评分改为单选；若不重新点击「开始交叉分析」直接导出，Excel 标题仍显示旧题型（评分）。
+- 统计结果本身可用，问题集中在导出标题标注与当前题型表不一致。
+
+**根因**：
+- `analysis_results` 中的 `res["题型"]` 仅在运行交叉分析时写入；
+- 导出链路直接复用这份结果，未在导出前再对齐当前 `column_type_df`（手动微调后的题型映射）。
+
+**本轮落地内容**：
+- 新增 `apply_column_type_labels_to_cross_results(results, column_type_map)`（`quant.py`）：
+  - 导出前按当前列级题型映射覆盖结果中的 `题型`；
+  - 仅在 `单选/评分/NPS` 三者之间做保守覆盖，避免误改矩阵题；
+  - 采用浅拷贝返回，避免污染 `st.session_state.analysis_results`。
+- `export_quant_cross_analysis_xlsx_bytes`（`playtest_pipeline.py`）新增可选参数 `column_type_map`，并在 `_export_results` 前应用上述覆盖逻辑。
+- `quant_app.py`：
+  - 新增 `_session_column_type_map()` 从 `session_state.column_type_df` 构建列名->题型映射；
+  - Playtest 同版式导出传入 `column_type_map`；
+  - 简易透视导出也使用同一套覆盖后的 `q_type`，保持两个导出口径一致；
+  - 导出区补充提示：标题按当前题型微调对齐；若要更新统计检验口径需重新运行交叉分析。
+
+**验证**：
+- 单元级验证：`apply_column_type_labels_to_cross_results` 覆盖生效且不改原始 dict。
+- 导出冒烟验证：`export_quant_cross_analysis_xlsx_bytes(..., column_type_map=...)` 可正常生成 bytes。
+- 场景回归：按“改题型不重跑 -> 导出”与“改题型后重跑 -> 导出”两路径，标题均与当前题型表一致。
+
+---
+
 ## 📅 2026-04-07（最新）
 
 ### 文本工具：题型手动纠偏、多选批量调整、大纲覆盖与长题干解析修复

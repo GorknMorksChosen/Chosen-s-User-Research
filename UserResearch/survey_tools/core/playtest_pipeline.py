@@ -76,6 +76,7 @@ from survey_tools.core.pipeline_report_blocks import (
 )
 from survey_tools.core.quant import extract_qnum
 from survey_tools.core.quant import (
+    apply_column_type_labels_to_cross_results,
     build_question_specs,
     run_quant_cross_engine,
 )
@@ -1525,13 +1526,17 @@ def export_quant_cross_analysis_xlsx_bytes(
     is_synthetic: bool,
     per_question_sheets: bool = False,
     outline: Optional[Dict[int, dict]] = None,
+    column_type_map: Optional[Dict[str, str]] = None,
 ) -> bytes:
     """与 Playtest ``_export_results`` 相同版式写出交叉分析 Excel（内存 bytes），供定量工具下载。"""
     matrix_q_map = _infer_matrix_groups(df.columns.tolist())
     buf = _io.BytesIO()
+    results_for_export = apply_column_type_labels_to_cross_results(
+        cross_results, column_type_map
+    )
     out = _export_results(
         df,
-        cross_results,
+        results_for_export,
         sig_test,
         segment_col,
         is_synthetic,

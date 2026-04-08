@@ -1353,7 +1353,7 @@ def run_question_analysis(
 
 
 from dataclasses import dataclass
-from typing import Iterable, List, Optional, Sequence
+from typing import Dict, Iterable, List, Optional, Sequence
 
 
 @dataclass(frozen=True)
@@ -1436,6 +1436,59 @@ def build_question_specs(
     return specs
 
 
+def normalize_cross_segment_label(value) -> str:
+    """统一交叉长表「核心分组」取值，避免 pivot 列名为 int 而统计 dict 键为 str 时导出错位。
+
+    典型场景：分组列为 1/2/3 次对局时，pandas 透视列名为 int，而 str(grp) 为 '1'/'2'/'3'。
+    """
+    if pd.isna(value):
+        return ""
+    if isinstance(value, (bool, np.bool_)):
+        return str(value)
+    if isinstance(value, (int, np.integer)):
+        return str(int(value))
+    if isinstance(value, float):
+        if not np.isfinite(value):
+            return str(value)
+        if value == int(value):
+            return str(int(value))
+        return str(value)
+    return str(value).strip()
+
+
+def apply_column_type_labels_to_cross_results(
+    results: List[dict],
+    column_type_map: Optional[Dict[str, str]],
+) -> List[dict]:
+    """导出前用当前「列名→题型」映射覆盖 ``res['题型']``，与题型微调一致。
+
+    对每条结果做浅拷贝后再改 ``题型``，避免污染 ``session_state.analysis_results``。
+    仅当映射值与当前 ``题型`` 均为「单选 / 评分 / NPS」之一时才覆盖，避免把矩阵题等误标成单选。
+    """
+    if not results or not column_type_map:
+        return list(results) if results else []
+    interchangeable = frozenset({"单选", "评分", "NPS"})
+    out: List[dict] = []
+    for res in results:
+        q = res.get("题目")
+        if q is None:
+            out.append(res)
+            continue
+        mapped = column_type_map.get(str(q))
+        if mapped is None or mapped not in interchangeable:
+            out.append(res)
+            continue
+        cur = res.get("题型", "")
+        if str(cur) not in interchangeable:
+            out.append(res)
+            continue
+        if mapped == cur:
+            out.append(res)
+            continue
+        out.append({**res, "题型": mapped})
+    return out
+
+
 def run_quant_cross_engine(
     df: pd.DataFrame,
     *,
@@ -1473,7 +1526,7 @@ def run_quant_cross_engine(
                 records.append(
                     {
                         "题目": q_col,
-                        "核心分组": seg_value,
+                        "核心分组": normalize_cross_segment_label(seg_value),
                         "选项": str(option),
                         "频次": int(count),
                         "行百分比": float(ratio),
@@ -1505,7 +1558,7 @@ def run_quant_cross_engine(
                 records.append(
                     {
                         "题目": prefix,
-                        "核心分组": seg_value,
+                        "核心分组": normalize_cross_segment_label(seg_value),
                         "选项": option_label,
                         "提及人数": int(mentions),
                         "提及率": float(ratio),

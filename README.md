@@ -96,6 +96,7 @@ streamlit run survey_tools/web/quant_app.py --server.port 8501
     *   **可视化增强**：生成堆叠条形图，并在报表中通过箭头 (`▲/▼`) 和色阶展示显著性差异。
     *   **容错机制**：自动屏蔽 `Type_` 等无关列，且在选错题目时自动跳过并提示，防止程序崩溃。
 *   **适用场景**：日常问卷基础数据处理、快速生成带统计检验的 Cross-tab 报表。
+*   **[NEW | 2026-04-08]** 导出题型标注与题型微调对齐：在 Quant 中手动调整题型后，即使未重新点击「开始交叉分析」，导出 Excel 标题也按当前题型表同步（单选/评分/NPS 保守覆盖），主下载与简易透视导出口径一致。详见 `UserResearch/docs/DEV_LOG.md`。
 
 ### 模块二：满意度与体验建模 (Standard)
 *   **入口脚本**：`survey_tools/web/satisfaction_app.py`（根目录 `satisfaction_engine.py` 为薄包装，等价）

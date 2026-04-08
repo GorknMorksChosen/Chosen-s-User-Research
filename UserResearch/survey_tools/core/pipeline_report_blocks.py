@@ -10,6 +10,8 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import pandas as pd
 
+from survey_tools.core.quant import normalize_cross_segment_label
+
 NPS_KEYWORDS = [
     "nps", "净推荐", "推荐意愿", "推荐可能性", "推荐概率", "recommend",
 ]
@@ -27,6 +29,17 @@ def extract_option_value(opt_text: str) -> Optional[float]:
     """
     m = re.match(r"^\s*(\d+(?:\.\d+)?)", str(opt_text).strip())
     return float(m.group(1)) if m else None
+
+
+def _align_group_lookup_key(col: Any, keys) -> Optional[Any]:
+    """在 Index / dict 键上匹配分组列名：兼容 pivot 列 int 与 str('1') 不一致。"""
+    if col in keys:
+        return col
+    sc = str(col)
+    if sc in keys:
+        return sc
+    return None
+
 
 def simple_pivot(res: dict, option_list: Optional[List[str]] = None) -> pd.DataFrame:
     """将 run_quant_cross_engine 长表透视为宽表（分组→列），并可按大纲选项补全。
@@ -55,6 +68,9 @@ def simple_pivot(res: dict, option_list: Optional[List[str]] = None) -> pd.DataF
                 aggfunc="first",
                 fill_value=0,
             ).reset_index()
+            pivot.columns = [
+                c if c == "选项" else normalize_cross_segment_label(c) for c in pivot.columns
+            ]
 
             # Step 2: 计算总计（用原始值作为 key）
             total_counts = df_q.groupby("选项")["频次"].sum()
@@ -148,6 +164,9 @@ def simple_pivot(res: dict, option_list: Optional[List[str]] = None) -> pd.DataF
                 aggfunc="first",
                 fill_value=0,
             ).reset_index()
+            pivot.columns = [
+                c if c == "选项" else normalize_cross_segment_label(c) for c in pivot.columns
+            ]
             total_mentions = df_q.groupby("选项")["提及人数"].sum()
             total_sample = df_q.groupby("核心分组")["组样本数"].first().sum()
             overall_rate = total_mentions / total_sample if total_sample > 0 else 0
@@ -288,8 +307,10 @@ def build_question_block(
                     continue
                 if c == "总体%":
                     r.iloc[0, j] = f"{overall:.1%}"
-                elif c in grp_map:
-                    r.iloc[0, j] = f"{grp_map[c]:.1%}"
+                else:
+                    gk = _align_group_lookup_key(c, grp_map)
+                    if gk is not None:
+                        r.iloc[0, j] = f"{grp_map[gk]:.1%}"
             return r
 
         rows.append(_fill_pct_row("Promoter占比（9-10）", promoter_overall, promoter_grp))
@@ -302,12 +323,20 @@ def build_question_block(
                 continue
             if c == "总体%":
                 nps_row.iloc[0, j] = f"{(promoter_overall - detractor_overall) * 100:.1f}"
-            elif c in promoter_grp and c in detractor_grp:
-                nps_row.iloc[0, j] = f"{(promoter_grp[c] - detractor_grp[c]) * 100:.1f}"
+            elif (
+                _align_group_lookup_key(c, promoter_grp) is not None
+                and _align_group_lookup_key(c, detractor_grp) is not None
+            ):
+                gk = _align_group_lookup_key(c, promoter_grp)
+                dk = _align_group_lookup_key(c, detractor_grp)
+                if gk is not None and dk is not None:
+                    nps_row.iloc[0, j] = f"{(promoter_grp[gk] - detractor_grp[dk]) * 100:.1f}"
             elif c == "人数N":
                 nps_row.iloc[0, j] = total_n_local
-            elif c in grp_n_local.index:
-                nps_row.iloc[0, j] = int(grp_n_local[c])
+            else:
+                gk2 = _align_group_lookup_key(c, grp_n_local.index)
+                if gk2 is not None:
+                    nps_row.iloc[0, j] = int(grp_n_local[gk2])
         rows.append(nps_row)
         return rows
 
@@ -346,7 +375,9 @@ def build_question_block(
                         sum(g_total_counts.get(opt, 0) for opt in g_total_counts.index if opt in numeric_opts)
                     )
                     if g_n_valid > 0:
-                        group_means[str(grp)] = g_weighted / g_n_valid
+                        group_means[normalize_cross_segment_label(grp)] = (
+                            g_weighted / g_n_valid
+                        )
             else:
                 n_valid = int(total_counts.sum())
         except Exception:
@@ -364,8 +395,10 @@ def build_question_block(
             banner_n_row.iloc[0, j] = total_n
         elif col == "人数N":
             banner_n_row.iloc[0, j] = ""  # 样本量行的人数N列留空
-        elif col in grp_n.index:
-            banner_n_row.iloc[0, j] = int(grp_n[col])
+        else:
+            gk = _align_group_lookup_key(col, grp_n.index)
+            if gk is not None:
+                banner_n_row.iloc[0, j] = int(grp_n[gk])
 
     # 列头行（选项|总体%|...|人数N）
     header_row = pd.DataFrame([dict(zip(pivot_df.columns, pivot_df.columns))])
@@ -407,8 +440,10 @@ def build_question_block(
                     continue
                 if col == "总体%":
                     t2b_row.iloc[0, j] = f"{t2b_overall:.1%}"
-                elif col in t2b_grp:
-                    t2b_row.iloc[0, j] = f"{t2b_grp[col]:.1%}"
+                else:
+                    gk = _align_group_lookup_key(col, t2b_grp)
+                    if gk is not None:
+                        t2b_row.iloc[0, j] = f"{t2b_grp[gk]:.1%}"
             t2b_b2b_rows.append(t2b_row)
 
             if opts_1_2:
@@ -419,8 +454,10 @@ def build_question_block(
                         continue
                     if col == "总体%":
                         b2b_row.iloc[0, j] = f"{b2b_overall:.1%}"
-                    elif col in b2b_grp:
-                        b2b_row.iloc[0, j] = f"{b2b_grp[col]:.1%}"
+                    else:
+                        gk = _align_group_lookup_key(col, b2b_grp)
+                        if gk is not None:
+                            b2b_row.iloc[0, j] = f"{b2b_grp[gk]:.1%}"
                 t2b_b2b_rows.append(b2b_row)
 
     # NPS 国际口径：NPS = %Promoter(9-10) - %Detractor(0-6)
@@ -441,8 +478,10 @@ def build_question_block(
                 mean_row.iloc[0, j] = f"{mean_val:.2f}"
             elif col == "人数N":
                 mean_row.iloc[0, j] = ""
-            elif str(col) in group_means:
-                mean_row.iloc[0, j] = f"{group_means[str(col)]:.2f}"
+            else:
+                gk = _align_group_lookup_key(col, group_means)
+                if gk is not None:
+                    mean_row.iloc[0, j] = f"{group_means[gk]:.2f}"
         parts.append(mean_row)
     parts.append(banner_n_row)
     parts.append(header_row)

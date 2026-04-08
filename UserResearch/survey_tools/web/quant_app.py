@@ -17,6 +17,7 @@ from survey_tools.utils.streamlit_cached_helpers import (
 )
 from survey_tools.utils.wjx_header import normalize_wjx_headers
 from survey_tools.core.quant import (
+    apply_column_type_labels_to_cross_results,
     calculate_rating_metrics,
     run_group_difference_test,
     process_ranking_data,
@@ -25,6 +26,18 @@ from survey_tools.core.quant import (
     make_safe_sheet_name,
 )
 from survey_tools.core.survey_metadata_columns import is_metadata_column
+
+
+def _session_column_type_map() -> dict | None:
+    """从 session 中题型表构建列名→题型映射，供导出标题与「题型微调」对齐（不依赖 if df 块内局部变量）。"""
+    tdf = st.session_state.get("column_type_df")
+    if tdf is None or "列名" not in tdf.columns or "题型" not in tdf.columns:
+        return None
+    return {
+        row["列名"]: row["题型"]
+        for _, row in tdf.iterrows()
+        if isinstance(row.get("列名"), str)
+    }
 
 # Playtest 同版式 Excel（core 模块；需在能 import survey_tools 的环境下运行 streamlit）
 try:
@@ -85,6 +98,8 @@ def init_session_state():
         st.session_state.outline_q_num_to_type = None  # 可选大纲解析后的题号→题型映射
     if "outline_skip_manual_merge" not in st.session_state:
         st.session_state.outline_skip_manual_merge = False  # 大纲成功解析后下一轮重建不合并旧「题型」
+    if "outline_raw" not in st.session_state:
+        st.session_state.outline_raw = None  # 上传大纲的完整解析结果（导出阶段可复用）
 
 
 def clear_quant_upload_derived_keys() -> None:
@@ -111,6 +126,7 @@ def clear_quant_upload_derived_keys() -> None:
         "combined_group_recipes",
         "outline_q_num_to_type",
         "outline_skip_manual_merge",
+        "outline_raw",
         "core_segment_col",
         "core_segment_col_widget",
         "combined_group_name",
@@ -571,6 +587,7 @@ def main():
                     )
                     mapped = outline_raw_to_quant_type_map(outline)
                     st.session_state.outline_q_num_to_type = mapped
+                    st.session_state.outline_raw = outline
                     st.session_state.column_type_df = None  # 强制重建题型表以应用大纲
                     # 本次重建不沿用旧表中的「题型」列，避免手动微调覆盖大纲结果
                     st.session_state.outline_skip_manual_merge = True
@@ -590,16 +607,19 @@ def main():
                 except ValueError as e:
                     st.warning(str(e))
                     st.session_state.outline_q_num_to_type = None
+                    st.session_state.outline_raw = None
                     st.session_state.column_type_df = None  # 避免静默沿用「以为已带大纲」的旧表
                 except Exception as e:
                     st.error(f"大纲解析失败：{e}")
                     st.session_state.outline_q_num_to_type = None
+                    st.session_state.outline_raw = None
                     st.session_state.column_type_df = None
             else:
                 if st.session_state.outline_q_num_to_type is not None:
                     st.caption("已清除大纲，将使用自动识别 + 手动调整")
                     st.session_state.column_type_df = None  # 去掉大纲覆盖，重建题型表
                 st.session_state.outline_q_num_to_type = None
+                st.session_state.outline_raw = None
 
         # 自动识别题型 (Logic from question_type.py)
         #
@@ -1197,6 +1217,7 @@ def main():
         st.caption(
             "主下载：与 Playtest Pipeline 相同版式（样本概况、交叉分析汇总含本题平均分/样本量行、显著性格式等）。"
             "下方「简易透视表」为页面展示用 pivot 的纯表导出，便于对照。"
+            "导出 Excel 中题目标题旁的题型标注会与当前「题型微调」表对齐；若修改题型后需更新检验口径，请重新运行交叉分析。"
         )
         export_per_q = st.checkbox(
             "导出时每题独立 Sheet（与 Playtest --per-question-sheets 一致）",
@@ -1210,6 +1231,7 @@ def main():
                 try:
                     core_seg = st.session_state.core_segment_col
                     is_syn = core_seg == "_总体_"
+                    outline_raw = st.session_state.get("outline_raw")
                     buf = export_quant_cross_analysis_xlsx_bytes(
                         df,
                         analysis_results,
@@ -1217,7 +1239,8 @@ def main():
                         segment_col=core_seg,
                         is_synthetic=is_syn,
                         per_question_sheets=export_per_q,
-                        outline=None,
+                        outline=outline_raw,
+                        column_type_map=_session_column_type_map(),
                     )
                     st.session_state.export_cross_buffer = buf
                     st.session_state.export_cross_name = "问卷定量交叉分析结果.xlsx"
@@ -1231,7 +1254,10 @@ def main():
         # 简易：纯 DataFrame 透视导出（无 openpyxl 版式）
         combined_dfs = []
         per_question_sheets = []  # [(sheet_name, df), ...]
-        for idx, res in enumerate(analysis_results, start=1):
+        _labeled_for_simple = apply_column_type_labels_to_cross_results(
+            analysis_results, _session_column_type_map()
+        )
+        for idx, res in enumerate(_labeled_for_simple, start=1):
             question = res["题目"]
             df_q = res["数据"]
             q_type = res["题型"]

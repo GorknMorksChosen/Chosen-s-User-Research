@@ -100,6 +100,7 @@ python scripts/run_playtest_pipeline.py
 *   **可选问卷大纲（2026-03-20）**：Web 定量页（`survey_tools/web/quant_app.py`）支持上传 `.docx` / `.txt` 大纲；**「大纲来源」** 下拉选择「问卷星」或「腾讯问卷」决定解析规则（与扩展名解耦）。成功解析后覆盖题型识别；不上传则仍为题干关键词自动识别 + 题型微调。解析实现与 Pipeline 共用 `survey_tools/utils/outline_parser.py`，详见 `docs/DEV_LOG.md`。
 *   **导出与 Playtest 对齐（2026-03-25）**：定量页主下载为与 Playtest CLI 相同 openpyxl 版式（样本概况、交叉汇总含均值行与显著性样式等）；需从 `UserResearch/` 目录启动 Streamlit。详见 `docs/DEV_LOG.md`。
 *   **批量检验与下载命名（2026-04-02）**：Quant 高级统计（单选/评分/组内）支持多选并默认全选可分析题目；各 Web 工具下载支持手动改文件名。详见 `docs/DEV_LOG.md`。
+*   **导出题型标注对齐（2026-04-08）**：题型微调后即使未重新运行交叉分析，导出 Excel 标题中的题型也会按当前题型表对齐（单选/评分/NPS 保守覆盖）；主下载与简易透视导出口径一致。详见 `docs/DEV_LOG.md`。
 
 ### 桌面版兼容说明（`问卷数表分析工具 v1.4.py`）
 *   本仓库保留桌面版 `问卷数表分析工具 v1.4.py`，用于历史流程兼容与离线操作。
