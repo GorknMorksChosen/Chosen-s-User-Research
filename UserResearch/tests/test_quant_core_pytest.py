@@ -33,6 +33,24 @@ def test_single_choice_between_group_has_pvalue():
     assert pd.notna(res["overall"]["p_value"])
 
 
+def test_single_choice_sparse_table_exposes_warning_fields():
+    df = pd.DataFrame(
+        {
+            "seg": ["A"] * 8 + ["B"] * 8 + ["C"] * 8,
+            "single_q": (
+                ["opt1"] * 6 + ["opt2"] + ["opt3"]
+                + ["opt2"] * 6 + ["opt3"] + ["opt4"]
+                + ["opt3"] * 6 + ["opt4"] + ["opt1"]
+            ),
+        }
+    )
+    res = run_group_difference_test(df, "seg", "single_q", "单选", alpha=0.05)
+    assert "warning_sparse_data" in res["overall"]
+    assert "expected_lt5_ratio" in res["overall"]
+    assert 0.0 <= float(res["overall"]["expected_lt5_ratio"]) <= 1.0
+    assert bool(res["overall"]["warning_sparse_data"]) is True
+
+
 def test_multi_choice_handles_float_zero_consistently():
     df = _build_base_df()
     res = run_group_difference_test(df, "seg", ["multi_a", "multi_b"], "多选", alpha=0.05)
@@ -40,6 +58,25 @@ def test_multi_choice_handles_float_zero_consistently():
     assert "details" in res and len(res["details"]) > 0
     # 确认 0.0 不会被误判为提及导致全显著噪声
     assert any(d["option"] == "multi_b" for d in res["details"])
+
+
+def test_multi_choice_pipeline_cells_have_fdr_and_test_method():
+    df = pd.DataFrame(
+        {
+            "seg": ["A"] * 12 + ["B"] * 12 + ["C"] * 12,
+            "multi_a": [1] * 10 + [0, 0] + [1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0] + [0] * 12,
+            "multi_b": [0] * 12 + [1] * 9 + [0, 0, 0] + [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        }
+    )
+    res = run_group_difference_test(df, "seg", ["multi_a", "multi_b"], "多选", alpha=0.05)
+    cells = res["pipeline_summary"]["cells"]
+    assert len(cells) > 0
+    sample = cells[0]
+    assert "p_value_raw" in sample
+    assert "p_value" in sample
+    assert "test_method" in sample
+    assert sample["test_method"] in ("fisher_exact", "ztest", "none")
+    assert 0.0 <= float(sample["p_value"]) <= 1.0
 
 
 def test_rating_small_sample_prefers_nonparametric_when_needed():

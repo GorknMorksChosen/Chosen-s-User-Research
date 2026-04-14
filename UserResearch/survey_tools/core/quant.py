@@ -8,6 +8,7 @@ from scipy.stats import kruskal, f_oneway
 from statsmodels.stats.contingency_tables import mcnemar
 from statsmodels.stats.multicomp import pairwise_tukeyhsd
 from statsmodels.stats.multitest import multipletests
+from statsmodels.stats.proportion import proportions_ztest
 from scikit_posthocs import posthoc_dunn
 
 
@@ -175,21 +176,43 @@ def _to_binary_mention(series):
     ).astype(int)
 
 
-def _two_proportion_z_test(x1: int, n1: int, x2: int, n2: int) -> Tuple[float, float]:
-    """两独立样本比例 z 检验（双侧），返回 (z, p_value)。"""
+def _two_group_mention_test(x1: int, n1: int, x2: int, n2: int) -> Tuple[str, float, float]:
+    """两独立样本提及率比较（混合策略），返回 (method, stat, p_value)。
+
+    当 2x2 列联表期望频数过低时回退 Fisher 精确检验；否则使用比例 z 检验。
+    """
     if n1 <= 0 or n2 <= 0:
-        return float("nan"), float("nan")
-    p1 = x1 / n1
-    p2 = x2 / n2
-    p_pool = (x1 + x2) / (n1 + n2)
-    if p_pool <= 0 or p_pool >= 1:
-        return float("nan"), float("nan")
-    se = np.sqrt(p_pool * (1 - p_pool) * (1.0 / n1 + 1.0 / n2))
-    if se == 0:
-        return float("nan"), float("nan")
-    z = (p1 - p2) / se
-    p_val = 2 * (1 - stats.norm.cdf(abs(z)))
-    return float(z), float(p_val)
+        return "none", float("nan"), float("nan")
+    if x1 < 0 or x2 < 0 or x1 > n1 or x2 > n2:
+        return "error", float("nan"), float("nan")
+    if (x1 == 0 and x2 == 0) or (x1 == n1 and x2 == n2):
+        return "none", 0.0, 1.0
+
+    table = np.array([[x1, n1 - x1], [x2, n2 - x2]], dtype=float)
+    total = float(table.sum())
+    if total <= 0:
+        return "none", float("nan"), float("nan")
+
+    row_margins = table.sum(axis=1)
+    col_margins = table.sum(axis=0)
+    expected = np.outer(row_margins, col_margins) / total
+
+    if expected.min() < 5:
+        try:
+            oddsratio, p_val = stats.fisher_exact(table)
+            return "fisher_exact", float(oddsratio), float(p_val)
+        except Exception:
+            return "error", float("nan"), float("nan")
+
+    try:
+        z_stat, p_val = proportions_ztest(
+            np.array([x1, x2]),
+            np.array([n1, n2]),
+            alternative="two-sided",
+        )
+        return "ztest", float(z_stat), float(p_val)
+    except Exception:
+        return "error", float("nan"), float("nan")
 
 
 def run_group_difference_test(
@@ -216,7 +239,7 @@ def run_group_difference_test(
           - "assumption_checks": dict，前置检验结果（评分题专有）。
           - "pipeline_summary": dict，供 Pipeline 导出（p_value、is_significant、cells 等）。
     """
-    result = {"overall": None, "pairwise": None}
+    result = {"overall": None, "pairwise": None, "errors": []}
     if group_col not in df.columns:
         result["overall"] = _build_empty_overall()
         result["pipeline_summary"] = {
@@ -267,6 +290,8 @@ def run_group_difference_test(
         chi2, p_chi, _, expected = stats.chi2_contingency(contingency)
         test_name = "chi-square"
         stat_val = chi2
+        warning_sparse = False
+        expected_lt5_ratio = 0.0
         if contingency.shape == (2, 2) and expected.min() < 5:
             try:
                 oddsratio, p_fish = stats.fisher_exact(contingency)
@@ -275,12 +300,17 @@ def run_group_difference_test(
                 p_chi = p_fish
             except Exception:
                 pass
+        elif contingency.shape != (2, 2):
+            expected_lt5_ratio = float((expected < 5).mean())
+            warning_sparse = expected_lt5_ratio > 0.2
         effect = calculate_cramers_v(contingency)
         result["overall"] = {
             "test": test_name,
             "stat": float(stat_val) if pd.notna(stat_val) else np.nan,
             "p_value": float(p_chi) if pd.notna(p_chi) else np.nan,
             "effect_size": float(effect) if pd.notna(effect) else np.nan,
+            "warning_sparse_data": warning_sparse,
+            "expected_lt5_ratio": expected_lt5_ratio,
         }
         arrow_map = {}
         cells_export = []
@@ -446,8 +476,8 @@ def run_group_difference_test(
         result["details"] = details
         if missing_cols:
             result["missing_options"] = missing_cols
-        # 每组 vs 其余组：提及率差异（双侧 z 检验），供 Pipeline 逐格打标
-        cells_export = []
+        # 每组 vs 其余组：提及率差异（混合策略），随后统一做 FDR 校正
+        raw_cells = []
         for col in option_cols:
             try:
                 mention = _to_binary_mention(data[col])
@@ -461,24 +491,64 @@ def run_group_difference_test(
                     n2 = int(rest_mask.sum())
                     if n1 < min_group_size or n2 < min_group_size:
                         continue
-                    _, p_z = _two_proportion_z_test(x1, n1, x2, n2)
+                    test_method, stat_val, p_z = _two_group_mention_test(x1, n1, x2, n2)
                     if not np.isfinite(p_z):
                         continue
                     p1 = x1 / n1 if n1 else 0.0
                     p2 = x2 / n2 if n2 else 0.0
                     direction = "higher" if p1 > p2 else "lower"
-                    cells_export.append(
+                    raw_cells.append(
                         {
                             "group": str(g),
                             "option": str(opt_label),
-                            "p_value": float(p_z),
-                            "is_significant": bool(p_z < alpha),
+                            "p_value_raw": float(p_z),
+                            "stat": float(stat_val) if np.isfinite(stat_val) else np.nan,
+                            "test_method": test_method,
                             "direction": direction,
                             "metric": "mention_rate",
                         }
                     )
-            except Exception:
+            except Exception as e:
+                result["errors"].append(f"多选 cells 计算失败: {e}")
                 continue
+        cells_export = []
+        if raw_cells:
+            try:
+                _, p_corrected, _, _ = multipletests(
+                    [cell["p_value_raw"] for cell in raw_cells], method="fdr_bh"
+                )
+                for idx, cell in enumerate(raw_cells):
+                    p_final = float(p_corrected[idx])
+                    cells_export.append(
+                        {
+                            "group": cell["group"],
+                            "option": cell["option"],
+                            "p_value_raw": cell["p_value_raw"],
+                            "p_value": p_final,
+                            "is_significant": bool(p_final < alpha),
+                            "direction": cell["direction"],
+                            "metric": cell["metric"],
+                            "test_method": cell["test_method"],
+                            "stat": cell["stat"],
+                        }
+                    )
+            except Exception as e:
+                result["errors"].append(f"多选 cells FDR 校正失败: {e}")
+                for cell in raw_cells:
+                    p_final = float(cell["p_value_raw"])
+                    cells_export.append(
+                        {
+                            "group": cell["group"],
+                            "option": cell["option"],
+                            "p_value_raw": cell["p_value_raw"],
+                            "p_value": p_final,
+                            "is_significant": bool(p_final < alpha),
+                            "direction": cell["direction"],
+                            "metric": cell["metric"],
+                            "test_method": cell["test_method"],
+                            "stat": cell["stat"],
+                        }
+                    )
         result["pipeline_summary"] = {
             "p_value": float(rep_p) if np.isfinite(rep_p) else np.nan,
             "is_significant": bool(np.isfinite(rep_p) and rep_p < alpha),
@@ -668,8 +738,8 @@ def run_group_difference_test(
                                     "mean_diff": float(row["mean_diff"]),
                                 }
                             )
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        result["errors"].append(f"Tukey HSD 事后检验报错: {e}")
                 else:
                     try:
                         dunn_res = posthoc_dunn(
@@ -690,8 +760,8 @@ def run_group_difference_test(
                                     "p_value": float(row["p_value"]),
                                 }
                             )
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        result["errors"].append(f"Dunn 事后检验报错: {e}")
             if pair_records:
                 result["pairwise"] = pd.DataFrame(pair_records)
             direction_by_group = _direction_by_welch_vs_rest()
