@@ -38,6 +38,7 @@ from survey_tools.web.outline_upload import (
 st.set_page_config(page_title="通用问卷文本分析引擎", layout="wide")
 
 class UniversalAnalysis(BaseModel):
+    item_id: str = Field(description="必须原样返回输入数据中该条样本对应的 id（字符串格式）")
     player_segment: str = Field(description="玩家分群标签。必须严格、完整地继承输入数据中提供的 segment 字段内容。如果输入中 segment 有值，严禁进行任何翻译、改写、添加后缀或修饰。只有当 segment 为空或为 None 时，才允许根据文本简要推断分群。")
     key_needs: str = Field(description="围绕研究目标提炼的核心诉求关键词，使用“/”分隔多个短语")
     qualitative_insight: str = Field(description="围绕【研究目标】给出的定性洞察总结，可以概括玩家的典型体验维度、画像特征或动机结构")
@@ -644,6 +645,10 @@ def init_session_state():
         st.session_state.llm_replay_rounds = 1
     if "llm_run_stats" not in st.session_state:
         st.session_state.llm_run_stats = {}
+    if "max_rows_hard_limit" not in st.session_state:
+        st.session_state.max_rows_hard_limit = 3000
+    if "confirm_large_run" not in st.session_state:
+        st.session_state.confirm_large_run = False
     if "export_data_bytes" not in st.session_state:
         st.session_state.export_data_bytes = None
     if "export_data_name" not in st.session_state:
@@ -778,6 +783,15 @@ with st.sidebar:
         max_value=3,
         value=st.session_state.llm_replay_rounds,
         help="首轮并发后，对失败批次进行额外重放的轮数。",
+        disabled=config_locked,
+    )
+    st.session_state.max_rows_hard_limit = st.number_input(
+        "大样本硬阈值（行）",
+        min_value=500,
+        max_value=50000,
+        value=int(st.session_state.max_rows_hard_limit),
+        step=500,
+        help="超过该阈值将要求强制确认，防止误触导致大量 API 消耗。",
         disabled=config_locked,
     )
     st.caption("—— 高级分析功能 ——")
@@ -1221,7 +1235,27 @@ if st.session_state.df is not None:
                 st.session_state.keyword_terms_confirmed = []
             st.info("已根据当前文本框中的关键词进行统计和分析，无需额外确认按钮。")
         
+        total_rows = len(df)
+        estimated_batches = int((total_rows + batch_size - 1) // batch_size)
+        hard_limit_rows = int(st.session_state.max_rows_hard_limit)
+        if total_rows > hard_limit_rows:
+            st.warning(
+                f"⚠️ 当前共 {total_rows} 行，预计发起约 {estimated_batches} 个批次请求。"
+                f"超过硬阈值 {hard_limit_rows} 行，可能产生较高 Token 成本。"
+            )
+            st.session_state.confirm_large_run = st.checkbox(
+                "我已确认风险，强制执行并承担 API 费用",
+                value=bool(st.session_state.confirm_large_run),
+                disabled=config_locked,
+                key="confirm_large_run_checkbox",
+            )
+        else:
+            st.session_state.confirm_large_run = False
+
         if st.button("🚀 开始 AI 深度分析", type="primary", disabled=config_locked):
+            if total_rows > hard_limit_rows and not st.session_state.get("confirm_large_run", False):
+                st.warning("请先勾选“我已确认风险，强制执行并承担 API 费用”。")
+                st.stop()
             st.session_state.stop_analysis = False
             if not st.session_state.api_key:
                 st.warning("请先在侧边栏配置 API Key")
@@ -1290,6 +1324,7 @@ if st.session_state.df is not None:
 
 输入数据说明:
 - 输入是一个 JSON 数组字符串 (变量 items_json)，其中的每个元素都是一个对象，包含字段:
+  - id: 样本的唯一标识符（必须原样返回）
   - segment: 原始玩家分群标签（可能为空或缺失）
   - context: 背景信息拼接字符串（可能包含评分、选择题结果等）
   - text: 填空题文本内容拼接字符串（只包含玩家的开放式文字反馈）
@@ -1297,9 +1332,10 @@ if st.session_state.df is not None:
 输入数据 (JSON 数组字符串，变量 items_json):
 {items_json}
 
-输出数据格式示例 (必须与输入数组长度相同，顺序一一对应):
+输出数据格式示例 (必须与输入数组长度相同，不可遗漏，不可重复):
 [
   {{
+    "item_id": "对应输入样本的id",
     "player_segment": "...",
     "key_needs": "...",
     "qualitative_insight": "...",
@@ -1310,6 +1346,7 @@ if st.session_state.df is not None:
 ]
 
 各字段含义:
+- item_id: 必须原样照抄输入中该条样本的 id，不得改写、不得缺失。
 - player_segment: 玩家分群标签。
   - 分群一致性规则（硬性约束）：
     - 如果输入 JSON 中的对象包含 segment 字段且该字段非空，输出的 player_segment 必须与该 segment 完全一致（包括空格和符号）。
@@ -1327,7 +1364,8 @@ if st.session_state.df is not None:
 1. 只输出一个 JSON 数组字符串。
 2. 不要输出任何解释性文字。
 3. 不要使用 Markdown 代码块标记（例如 ```json）。
-4. 数组中的每个对象必须严格包含键: player_segment, key_needs, qualitative_insight, emotion_label, emotion_score。
+4. 数组中的每个对象必须严格包含键: item_id, player_segment, key_needs, qualitative_insight, emotion_label, emotion_score。
+5. 不允许遗漏条目，也不允许重复 item_id。
                     """
                 )
                 
@@ -1350,9 +1388,14 @@ if st.session_state.df is not None:
                     effective_context_cols = [
                         c for c in context_cols_local if c not in spoiler_cols_local
                     ]
-                    for _, row in batch_df.iterrows():
+                    for row_idx, row in batch_df.iterrows():
                         context_data = build_context_string(row, effective_context_cols)
                         target_text = build_target_string(row, target_cols_local)
+                        internal_id = sanitize_value(row.get("Internal_ID", None))
+                        if internal_id is None:
+                            item_id = f"row_{int(row_idx)}"
+                        else:
+                            item_id = str(internal_id)
                         raw_values = []
                         for t in target_cols_local:
                             if t in row:
@@ -1371,17 +1414,26 @@ if st.session_state.df is not None:
                                 "emotion_label": "中性",
                                 "emotion_score": 0,
                             }
-                            mapping.append({"type": "local", "value": placeholder, "segment": segment_val})
+                            mapping.append({"type": "local", "value": placeholder, "segment": segment_val, "item_id": item_id})
                         else:
-                            idx_item = len(items)
-                            items.append({"segment": segment_val, "context": context_data, "text": target_text})
-                            mapping.append({"type": "llm", "index": idx_item, "segment": segment_val})
+                            items.append({"id": item_id, "segment": segment_val, "context": context_data, "text": target_text})
+                            mapping.append({"type": "llm", "item_id": item_id, "segment": segment_val})
 
                     llm_results = []
                     llm_success = True
                     llm_retry_count = 0
                     llm_error = ""
+                    llm_raw_preview = ""
+                    llm_expected_items = int(len(items))
+                    llm_returned_items = 0
+                    llm_matched_items = 0
+                    llm_missing_items = 0
+                    llm_duplicate_ids = 0
+                    llm_unknown_ids = 0
+                    llm_parse_failures = 0
                     if items:
+                        sent_ids = [str(it["id"]) for it in items]
+                        sent_id_set = set(sent_ids)
                         messages = prompt.format_messages(
                             items_json=json.dumps(items, ensure_ascii=False),
                             research_goal=research_goal_local,
@@ -1400,22 +1452,45 @@ if st.session_state.df is not None:
                             )
                             llm_retry_count = int(used_retry)
                             raw_llm_text = response.content
+                            llm_raw_preview = str(raw_llm_text)[:500]
                             data = safe_json_parse(raw_llm_text)
                             if isinstance(data, dict):
                                 data_list = [data]
                             else:
                                 data_list = data
-                            for obj in data_list[: len(items)]:
+                            llm_returned_items = int(len(data_list)) if isinstance(data_list, list) else 0
+                            parsed_map = {}
+                            for obj in data_list:
                                 try:
                                     parsed_obj = UniversalAnalysis.model_validate(obj)
-                                    llm_results.append(parsed_obj.model_dump())
+                                    parsed_dict = parsed_obj.model_dump()
+                                    pid = str(parsed_dict.get("item_id", "")).strip()
+                                    if not pid:
+                                        llm_parse_failures += 1
+                                        continue
+                                    if pid in parsed_map:
+                                        llm_duplicate_ids += 1
+                                    if pid not in sent_id_set:
+                                        llm_unknown_ids += 1
+                                    parsed_map[pid] = parsed_dict
                                 except Exception:
-                                    llm_results.append(ERROR_PLACEHOLDER.copy())
-                            while len(llm_results) < len(items):
-                                llm_results.append(ERROR_PLACEHOLDER.copy())
+                                    llm_parse_failures += 1
+
+                            llm_result_map = {}
+                            for sid in sent_ids:
+                                if sid in parsed_map:
+                                    res_dict = parsed_map[sid].copy()
+                                    res_dict.pop("item_id", None)
+                                    llm_result_map[sid] = res_dict
+                                    llm_matched_items += 1
+                                else:
+                                    llm_result_map[sid] = ERROR_PLACEHOLDER.copy()
+                            llm_missing_items = max(0, llm_expected_items - llm_matched_items)
+                            llm_results = [llm_result_map[sid] for sid in sent_ids]
                         except Exception as e:
                             llm_success = False
                             llm_error = str(e)
+                            llm_missing_items = llm_expected_items
                             llm_results = [ERROR_PLACEHOLDER.copy() for _ in range(len(items))]
 
                     batch_results = []
@@ -1425,7 +1500,7 @@ if st.session_state.df is not None:
                         if m["type"] == "local":
                             res = m["value"].copy()
                         else:
-                            idx_item = m["index"]
+                            idx_item = next((i for i, _it in enumerate(items) if _it["id"] == m["item_id"]), -1)
                             if idx_item < len(llm_results):
                                 res = llm_results[idx_item].copy()
                             else:
@@ -1442,6 +1517,14 @@ if st.session_state.df is not None:
                         "llm_success": bool(llm_success),
                         "llm_retry_count": int(llm_retry_count),
                         "llm_error": llm_error[:300],
+                        "llm_raw_preview": llm_raw_preview,
+                        "llm_expected_items": llm_expected_items,
+                        "llm_returned_items": int(llm_returned_items),
+                        "llm_matched_items": int(llm_matched_items),
+                        "llm_missing_items": int(llm_missing_items),
+                        "llm_duplicate_ids": int(llm_duplicate_ids),
+                        "llm_unknown_ids": int(llm_unknown_ids),
+                        "llm_parse_failures": int(llm_parse_failures),
                     }
                     return start_idx, end_idx, batch_results, meta
 
@@ -1584,6 +1667,13 @@ if st.session_state.df is not None:
                 total_retry_count = int(sum(m.get("llm_retry_count", 0) for m in batch_meta_records))
                 failed_batch_count = int(sum(1 for m in batch_meta_records if not m.get("llm_success", True)))
                 unresolved_batch_count = int(len(unresolved_batches))
+                expected_items = int(sum(m.get("llm_expected_items", 0) for m in batch_meta_records))
+                returned_items = int(sum(m.get("llm_returned_items", 0) for m in batch_meta_records))
+                matched_items = int(sum(m.get("llm_matched_items", 0) for m in batch_meta_records))
+                missing_items = int(sum(m.get("llm_missing_items", 0) for m in batch_meta_records))
+                duplicate_ids = int(sum(m.get("llm_duplicate_ids", 0) for m in batch_meta_records))
+                unknown_ids = int(sum(m.get("llm_unknown_ids", 0) for m in batch_meta_records))
+                parse_failures = int(sum(m.get("llm_parse_failures", 0) for m in batch_meta_records))
                 st.session_state.llm_run_stats = {
                     "total_rows": int(total),
                     "llm_rows": total_llm_rows,
@@ -1591,6 +1681,13 @@ if st.session_state.df is not None:
                     "unresolved_batches": unresolved_batch_count,
                     "replay_attempted_batches": int(replay_total_attempts),
                     "total_retries": total_retry_count,
+                    "expected_items": expected_items,
+                    "returned_items": returned_items,
+                    "matched_items": matched_items,
+                    "missing_items": missing_items,
+                    "duplicate_ids": duplicate_ids,
+                    "unknown_ids": unknown_ids,
+                    "parse_failures": parse_failures,
                 }
                 
                 st.success("分析完成！")
@@ -1602,6 +1699,12 @@ if st.session_state.df is not None:
                     )
                 else:
                     st.info(f"LLM 调用统计：重试 {stats_msg['total_retries']} 次，全部批次成功。")
+                if stats_msg.get("missing_items", 0) > 0 or stats_msg.get("duplicate_ids", 0) > 0:
+                    st.warning(
+                        f"对齐校验告警：期望 {stats_msg.get('expected_items', 0)}，返回 {stats_msg.get('returned_items', 0)}，"
+                        f"匹配 {stats_msg.get('matched_items', 0)}，缺失 {stats_msg.get('missing_items', 0)}，"
+                        f"重复ID {stats_msg.get('duplicate_ids', 0)}，未知ID {stats_msg.get('unknown_ids', 0)}。"
+                    )
 
 # --- 5. 结果展示与统计 ---
 if st.session_state.analyzed_df is not None:
@@ -1611,7 +1714,8 @@ if st.session_state.analyzed_df is not None:
         st.caption(
             f"本轮调用统计：样本 {run_stats.get('total_rows', 0)}，LLM样本 {run_stats.get('llm_rows', 0)}，"
             f"重试 {run_stats.get('total_retries', 0)}，失败批次 {run_stats.get('failed_batches', 0)}，"
-            f"重放批次数 {run_stats.get('replay_attempted_batches', 0)}，未恢复批次 {run_stats.get('unresolved_batches', 0)}。"
+            f"重放批次数 {run_stats.get('replay_attempted_batches', 0)}，未恢复批次 {run_stats.get('unresolved_batches', 0)}，"
+            f"对齐匹配 {run_stats.get('matched_items', 0)}/{run_stats.get('expected_items', 0)}。"
         )
     
     st.divider()
