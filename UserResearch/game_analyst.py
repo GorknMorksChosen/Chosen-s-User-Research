@@ -2,6 +2,7 @@ import streamlit as st
 # 游研专家分析工具 - 已修复路径分析缩进
 import pandas as pd
 import numpy as np
+import warnings
 import seaborn as sns
 import matplotlib.pyplot as plt
 import plotly.express as px
@@ -99,17 +100,25 @@ def _render_ga_unified_export_sidebar() -> None:
 
 class LegacyGameExperienceAnalyzer:
     """
-    游戏体验深度分析工具类
-    提供全链路分析：数据体检 → 相关性 → 因子聚类 → 玩家分群 → 因果回归 → 路径分析
+    已弃用的历史分析器。
+
+    请改用 `survey_tools.core.advanced_modeling.GameExperienceAnalyzer` 作为
+    唯一事实源实现。该类仅保留用于历史兼容，不再新增功能或修复。
     """
     
     def __init__(self, data: pd.DataFrame):
         """
-        初始化分析器
+        初始化历史分析器（弃用）。
         
         Args:
             data: 输入的问卷数据
         """
+        warnings.warn(
+            "LegacyGameExperienceAnalyzer 已弃用，请改用 "
+            "survey_tools.core.advanced_modeling.GameExperienceAnalyzer。",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         self.data = data.copy()
 
     def data_quality_check(self, features: list, time_col: str = None, min_duration: int = 30):
