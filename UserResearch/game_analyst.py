@@ -68,7 +68,7 @@ def _render_ga_unified_export_sidebar() -> None:
     if st.session_state.get("ga_export_model_health") is not None:
         sheets.append(("模型健康度", st.session_state.ga_export_model_health))
     if st.session_state.get("ga_export_kano") is not None:
-        sheets.append(("Kano分析", st.session_state.ga_export_kano))
+        sheets.append(("IPA象限分析", st.session_state.ga_export_kano))
     if st.session_state.get("ga_export_shap") is not None:
         sheets.append(("SHAP重要性", st.session_state.ga_export_shap))
     if st.session_state.get("ga_export_sem") is not None:
@@ -658,7 +658,7 @@ if uploaded_file:
     # 2. 参数选择 (整合至第一个 Tab)
     all_cols = df.columns.tolist()
     
-    tab0, tab1, tab2, tab3, tab4, tab5 = st.tabs(["📋 数据看板与体检", "📊 相关性分析", "🔍 因子与聚类", "📈 回归与因果", "💡 Kano & SHAP", "🕸️ 路径分析(SEM)"])
+    tab0, tab1, tab2, tab3, tab4, tab5 = st.tabs(["📋 数据看板与体检", "📊 相关性分析", "🔍 因子与聚类", "📈 回归与因果", "💡 IPA & SHAP", "🕸️ 路径分析(SEM)"])
 
     # --- TAB 0: 数据看板与体检 ---
     with tab0:
@@ -1009,6 +1009,8 @@ if uploaded_file:
                     missing_strategy=missing_strategy,
                     missing_group_col=missing_group_col,
                 )
+                for w in analyzer.warnings:
+                    st.warning(w)
                 
                 results_df = regression_results["results_df"]
                 final_model = regression_results["final_model"]
@@ -1206,30 +1208,30 @@ if uploaded_file:
                 st.error(f"回归分析执行失败: {str(e)}")
                 st.warning("⚠️ 请检查数据格式是否正确，确保所有选择的变量都是数值型。")
             
-        # --- TAB 4: Kano & SHAP (多维归因) ---
+        # --- TAB 4: IPA & SHAP (多维归因) ---
         with tab4:
-            st.subheader("💡 Kano模型分析 (识别‘必备’与‘魅力’属性)")
-            kano_df = analyzer.kano_analysis(selected_features, target_col)
-            
-            # Kano 分类逻辑
-            m_sat = kano_df["满意度"].mean()
-            m_imp = kano_df["重要性(相关系数)"].mean()
-            
-            def classify_kano(row):
-                if row["重要性(相关系数)"] > m_imp:
-                    return "必备属性" if row["满意度"] < m_sat else "魅力属性"
-                else:
-                    return "期望属性" if row["满意度"] > m_sat else "无差异属性"
-            
-            kano_df["Kano分类"] = kano_df.apply(classify_kano, axis=1)
-            st.session_state.ga_export_kano = kano_df.copy()
-
-            fig_kano = px.scatter(kano_df, x="满意度", y="重要性(相关系数)", text="模块名称",
-                                 color="Kano分类", size_max=40,
-                                 title="Kano分析矩阵 (非对称满意度分析)")
-            fig_kano.add_hline(y=m_imp, line_dash="dash")
-            fig_kano.add_vline(x=m_sat, line_dash="dash")
-            st.plotly_chart(fig_kano, use_container_width=True)
+            st.subheader("💡 IPA象限分析 (满意度 × 推导重要性)")
+            ipa_df = analyzer.ipa_quadrant_analysis(selected_features, target_col)
+            for w in analyzer.warnings:
+                st.warning(w)
+            if not ipa_df.empty:
+                st.session_state.ga_export_kano = ipa_df.copy()
+                m_sat = ipa_df["满意度"].median()
+                m_imp = ipa_df["推导重要性(相关系数)"].median()
+                fig_ipa = px.scatter(
+                    ipa_df,
+                    x="满意度",
+                    y="推导重要性(相关系数)",
+                    text="模块名称",
+                    color="IPA四象限分类",
+                    size_max=40,
+                    title="IPA 象限分析矩阵",
+                )
+                fig_ipa.add_hline(y=m_imp, line_dash="dash")
+                fig_ipa.add_vline(x=m_sat, line_dash="dash")
+                st.plotly_chart(fig_ipa, use_container_width=True)
+            else:
+                st.info("当前数据未产出可展示的 IPA 结果。")
             
             st.subheader("🌳 机器学习归因 (Random Forest + SHAP)")
             if shap:

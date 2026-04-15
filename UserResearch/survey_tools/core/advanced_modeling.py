@@ -36,7 +36,14 @@ class GameExperienceAnalyzer:
         Args:
             data: 输入的问卷数据
         """
-        self.data = data
+        # core 层必须持有副本，避免分析过程中的赋值/清洗污染外部原始数据
+        self.data = data.copy()
+        # 统一收集 core 层警告，由 web 层按需展示
+        self.warnings: list[str] = []
+
+    def _reset_warnings(self) -> None:
+        """清空当前实例缓存的警告消息。"""
+        self.warnings = []
 
     def data_quality_check(self, features: list, time_col: str = None, min_duration: int = 30):
         """数据质量检查：检测直线勾选、作答时长过短、缺失值和离群值。
@@ -199,43 +206,72 @@ class GameExperienceAnalyzer:
         
         return df_clustered, kmeans.cluster_centers_, scaler, silhouette_avg
 
-    def kano_analysis(self, features: list, target: str):
-        """执行 Kano 模型分析，基于满意度与重要性的非对称回归将特征分类。
+    def ipa_quadrant_analysis(self, features: list, target: str):
+        """执行 IPA 象限分析（非经典双问法 Kano）。
 
-        通过分别拟合高分区间（表现好→提升）和低分区间（表现差→下降）的回归系数差异，
-        将各特征归类为 Must-be / Attractive / One-dimensional / Indifferent 四类。
-
-        Args:
-            features: list[str]，参与 Kano 分析的特征列名（自变量）。
-            target: str，整体满意度列名（因变量）。
-
-        Returns:
-            pd.DataFrame，Kano 分类结果，含 feature/attractive_coef/must_be_coef/category 列。
+        注意：该方法基于满意度与推导重要性（相关系数）做四象限分类，
+        并非经典 Kano 双问法模型。
         """
+        self._reset_warnings()
+        if not features:
+            self.warnings.append("未选择可分析特征，IPA 分析已跳过。")
+            return pd.DataFrame()
+        missing_cols = [c for c in [target] + features if c not in self.data.columns]
+        if missing_cols:
+            self.warnings.append(f"IPA 分析存在缺失列：{missing_cols}")
+            return pd.DataFrame()
+
         df_clean = self.data[[target] + features].dropna()
+        if df_clean.empty or len(df_clean) < 5:
+            self.warnings.append("有效样本过少，IPA 分析结果可能不可靠。")
+            return pd.DataFrame()
+
         y = df_clean[target]
-        X = df_clean[features]
-        
-        # 这里使用一种简化的Kano方法：相关系数 vs 满意度分布
-        # 或者更专业的：使用惩罚回归或分段回归。
-        # 为了通用性，我们计算每个属性的平均得分（满意度）和它与总分的皮尔逊相关系数（重要性）
         results = []
         for feat in features:
             corr = df_clean[feat].corr(y)
             mean_score = df_clean[feat].mean()
-            # 简单Kano分类逻辑：
-            # 魅力属性 (Attractive): 表现好时极大提升满意度，表现一般时用户也能接受
-            # 必备属性 (Must-be): 表现不好时极大降低满意度，表现好时用户认为理所当然
-            # 一元属性 (One-dimensional): 满意度与表现线性相关
-            # 无差异属性 (Indifferent): 表现好坏不影响满意度
-            results.append({
-                "模块名称": feat,
-                "满意度": mean_score,
-                "重要性(相关系数)": corr
-            })
-        return pd.DataFrame(results)
+            results.append(
+                {
+                    "模块名称": feat,
+                    "满意度": mean_score,
+                    "推导重要性(相关系数)": corr if pd.notna(corr) else 0.0,
+                }
+            )
 
-    def shap_importance(self, features: list, target: str):
+        df_result = pd.DataFrame(results)
+        if df_result.empty:
+            self.warnings.append("IPA 分析未产出可用结果。")
+            return df_result
+
+        crosshair_imp = df_result["推导重要性(相关系数)"].median()
+        crosshair_sat = df_result["满意度"].median()
+
+        def classify_quadrant(row: pd.Series) -> str:
+            imp = row["推导重要性(相关系数)"]
+            sat = row["满意度"]
+            if imp >= crosshair_imp and sat < crosshair_sat:
+                return "亟待改进 (Must-be/痛点)"
+            if imp >= crosshair_imp and sat >= crosshair_sat:
+                return "优势保持 (核心卖点)"
+            if imp < crosshair_imp and sat >= crosshair_sat:
+                return "锦上添花 (魅力属性)"
+            return "次要观察 (无差异)"
+
+        df_result["IPA四象限分类"] = df_result.apply(classify_quadrant, axis=1)
+        return df_result
+
+    def kano_analysis(self, features: list, target: str):
+        """兼容旧调用：转发至 IPA 象限分析。"""
+        return self.ipa_quadrant_analysis(features, target)
+
+    def shap_importance(
+        self,
+        features: list,
+        target: str,
+        missing_strategy: str = "median",
+        missing_group_col: str = None,
+    ):
         """使用随机森林模型和 SHAP 值计算各特征对目标变量的重要性排名。
 
         Args:
@@ -245,7 +281,23 @@ class GameExperienceAnalyzer:
         Returns:
             pd.DataFrame，按 SHAP 重要性降序排列，含 feature/importance 两列。
         """
-        df_clean = self.data[[target] + features].dropna()
+        self._reset_warnings()
+        if not features:
+            raise ValueError("未选择特征列，无法进行 SHAP 分析。")
+        missing_cols = [c for c in [target] + features if c not in self.data.columns]
+        if missing_cols:
+            raise ValueError(f"SHAP 分析存在缺失列: {missing_cols}")
+
+        df_source = self.data[[target] + features].copy()
+        df_source = df_source.dropna(subset=[target])
+        if len(df_source) < 10:
+            raise ValueError(f"目标变量有效样本仅剩 {len(df_source)} 条，不足以进行随机森林 SHAP 分析。")
+
+        df_clean = self._apply_missing_strategy(
+            df_source,
+            strategy=missing_strategy,
+            group_col=missing_group_col,
+        ).astype(np.float64)
         X = df_clean[features]
         y = df_clean[target]
         feat_tuple = tuple(features)
@@ -282,34 +334,21 @@ class GameExperienceAnalyzer:
         Returns:
             dict: 回归分析结果
         """
+        self._reset_warnings()
         selected_all = [target] + features
         # 增加缺失值比例检查，防止均值填充导致的偏差
         missing_ratios = self.data[selected_all].isnull().mean()
         high_missing_cols = missing_ratios[missing_ratios > 0.1].index.tolist()
         if high_missing_cols:
-             # 如果是在 streamlit 环境下，可以尝试显示警告
-             try:
-                 import streamlit as st
-                 missing_info = []
-                 for col in high_missing_cols:
-                     rate = missing_ratios[col]
-                     missing_info.append(f"- **{col}**: 缺失 {rate:.1%}")
-                 
-                 st.warning(
-                    f"""
-                    **⚠️ 数据健康度预警**
-                    
-                    检测到以下细项的缺失率较高（>10%），这通常是由于问卷的【跳题逻辑】导致的：
-                    {chr(10).join(missing_info)}
-                    
-                    **风险提示**：将跳题强行填入均值参与多元回归会导致模型严重失真！
-                    **强烈建议**：仅选择所有人都必答的全局题目进行回归分析；对于分支题目，请先在外部筛选特定人群后再上传分析。
-                    """
-                 )
-             except ImportError:
-                 pass
-             except Exception:
-                 pass
+            missing_info = []
+            for col in high_missing_cols:
+                rate = missing_ratios[col]
+                missing_info.append(f"- {col}: 缺失 {rate:.1%}")
+            self.warnings.append(
+                "数据健康度预警：检测到高缺失率列（常见于跳题逻辑）。\n"
+                + "\n".join(missing_info)
+                + "\n风险提示：对分支题目强行填补会导致回归失真，建议先做人群筛选。"
+            )
 
         df_source = self.data[selected_all].copy()
         if cluster is not None and '玩家分群' in self.data.columns:
@@ -386,9 +425,18 @@ class GameExperienceAnalyzer:
             if p < 0.05:
                 return 1.5
             return 0.5
-        
+
+        def vif_penalty(v):
+            if v > 10:
+                return 0.1
+            if v > 5:
+                return 0.5
+            return 1.0
+
         sig_weights = results_df["P值(显著性)"].apply(sig_weight)
-        priority_raw = score_severity * beta_strength * sig_weights
+        vif_penalties = results_df["共线性(VIF)"].apply(vif_penalty)
+        # TODO: 当前 VIF 惩罚为业务启发式规则。长期可引入逐步回归或 Ridge 双轨模型。
+        priority_raw = score_severity * beta_strength * sig_weights * vif_penalties
         priority_norm = priority_raw / (priority_raw.max() + 1e-6)
         results_df["改进优先级得分"] = np.round(priority_norm, 3)
         

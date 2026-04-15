@@ -57,7 +57,7 @@ def render_unified_export_sidebar() -> None:
     if st.session_state.get("sat_game_reg") is not None:
         sheets.append(("高级_多元回归", st.session_state.sat_game_reg))
     if st.session_state.get("sat_game_kano") is not None:
-        sheets.append(("高级_Kano", st.session_state.sat_game_kano))
+        sheets.append(("高级_IPA象限", st.session_state.sat_game_kano))
     if st.session_state.get("sat_game_shap") is not None:
         sheets.append(("高级_SHAP", st.session_state.sat_game_shap))
     if st.session_state.get("sat_game_sem") is not None:
@@ -410,7 +410,7 @@ def render_game_experience_module(df):
     analyzer = GameExperienceAnalyzer(df)
     all_cols = df.columns.tolist()
     
-    tab0, tab1, tab2, tab3, tab4, tab5 = st.tabs(["数据看板与体检", "相关性分析", "因子与聚类", "回归与因果", "Kano 与 SHAP", "路径分析 (SEM)"])
+    tab0, tab1, tab2, tab3, tab4, tab5 = st.tabs(["数据看板与体检", "相关性分析", "因子与聚类", "回归与因果", "IPA象限与 SHAP", "路径分析 (SEM)"])
 
     # --- TAB 0: 数据看板与体检 ---
     with tab0:
@@ -563,6 +563,8 @@ def render_game_experience_module(df):
                     missing_strategy=missing_strategy,
                     missing_group_col=missing_group_col,
                 )
+                for w in analyzer.warnings:
+                    st.warning(w)
                 st.metric("R²", f"{reg_res['final_model'].rsquared:.3f}")
                 st.dataframe(reg_res['results_df'].sort_values("改进优先级得分", ascending=False), use_container_width=True)
                 st.session_state.sat_game_reg = reg_res["results_df"].copy()
@@ -571,18 +573,35 @@ def render_game_experience_module(df):
 
     # --- TAB 4: Kano & SHAP ---
     with tab4:
-        st.subheader("Kano 与 SHAP")
-        if st.button("执行 Kano 分析"):
-            kano_res = analyzer.kano_analysis(selected_features, target_col)
-            st.session_state.sat_game_kano = kano_res.copy()
-            st.dataframe(kano_res, use_container_width=True)
-            fig_kano = px.scatter(kano_res, x="满意度", y="重要性(相关系数)", text="模块名称", title="Kano 属性分类图")
-            st.plotly_chart(fig_kano, use_container_width=True)
+        st.subheader("IPA 象限与 SHAP")
+        if st.button("执行 IPA 象限分析"):
+            ipa_res = analyzer.ipa_quadrant_analysis(selected_features, target_col)
+            for w in analyzer.warnings:
+                st.warning(w)
+            if ipa_res.empty:
+                st.info("当前数据未产出可展示的 IPA 结果。")
+            else:
+                st.session_state.sat_game_kano = ipa_res.copy()
+                st.dataframe(ipa_res, use_container_width=True)
+                fig_ipa = px.scatter(
+                    ipa_res,
+                    x="满意度",
+                    y="推导重要性(相关系数)",
+                    text="模块名称",
+                    color="IPA四象限分类",
+                    title="IPA 象限分类图",
+                )
+                st.plotly_chart(fig_ipa, use_container_width=True)
             
         st.divider()
         if st.button("执行 SHAP 重要性分析"):
             try:
-                imp_df, shap_values, X = analyzer.shap_importance(selected_features, target_col)
+                imp_df, shap_values, X = analyzer.shap_importance(
+                    selected_features,
+                    target_col,
+                    missing_strategy=missing_strategy,
+                    missing_group_col=missing_group_col,
+                )
                 st.session_state.sat_game_shap = imp_df.copy()
                 st.dataframe(imp_df, use_container_width=True)
                 if shap_values is not None:
